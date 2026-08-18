@@ -1,75 +1,25 @@
-# Trivial · GitHub Pages
+# Trivial
 
-Aplicación estática para dirigir partidas de Trivial desde un navegador, sin servidor y sin publicar el banco de preguntas.
+Aplicación estática autosuficiente para GitHub Pages. Permite jugar con J1, J2 y J3 en cualquier combinación de 1 a 3 participantes, escogiendo categorías y niveles por partida.
 
-## Funciones del MVP
+## Datos canónicos
 
-- Crear cualquier número de partidas.
-- Reutilizar jugadores entre partidas para estadísticas históricas.
-- Activar cualquier subconjunto de categorías y niveles de un banco.
-- Sacar la siguiente pregunta elegible respetando el orden del banco.
-- Mostrar la respuesta cuando decida el anfitrión.
-- Registrar acierto, fallo, intento de quesito y quesito obtenido.
-- Descartar/contaminar una pregunta y excluirla globalmente.
-- Deshacer y rehacer operaciones mediante un registro de eventos (no se destruye el histórico).
-- Cerrar partidas con motivo de cierre y deshacer el cierre si fue accidental.
-- Estadísticas por jugador, categoría y nivel.
-- Copia completa JSON para migrar o recuperar el navegador.
-- Importación CSV compatible con la pestaña `Banco` usada en Trivial.
-- PWA básica: tras una primera carga puede seguir abriéndose con los recursos cacheados.
+La semilla está en `data/` y usa CSV UTF-8 **sin BOM**, separador coma, comillas dobles y finales de línea CRLF (dialecto RFC 4180). Las cabeceras son ASCII estables. No hay una segunda semilla JSON.
 
-## Por qué el banco NO está en el repositorio
+- `players.csv`: jugadores.
+- `categories.csv`: categorías.
+- `levels.csv`: niveles.
+- `questions-*.csv`: banco de preguntas por categoría.
+- `matches.csv`, `participants.csv`, `attempts-*.csv`, `exposures.csv`: histórico inicial.
+- `events.csv`: ledger inicial de eventos web.
+- `meta.csv`: versión y metadatos de semilla.
 
-GitHub Pages publica los archivos del sitio. Si se incluyeran las preguntas y respuestas en JavaScript/JSON dentro del repositorio, cualquier visitante podría verlas desde el código fuente o las herramientas del navegador.
+Al abrir la web, estos CSV se cargan automáticamente en IndexedDB. Las partidas nuevas se guardan automáticamente en el navegador; `Restaurar base original` vuelve exactamente a la semilla del repositorio.
 
-Por eso el repositorio contiene solo la aplicación. El anfitrión exporta su banco como CSV y lo carga localmente en la pestaña **Bancos**. IndexedDB conserva los datos en ese navegador.
+## Selección de preguntas
 
-Una copia completa (`trivial-backup-YYYY-MM-DD.json`) también contiene preguntas y respuestas: **no debe subirse a un repositorio público**.
+La configuración de cada partida congela jugadores, categorías, niveles, semilla y pesos de nivel. El nivel de cada turno se selecciona con un PRNG determinista. Los pesos proceden de la composición original de la categoría y no disminuyen al consumirse preguntas; un nivel solo se elimina de la distribución cuando ya no tiene stock activo. Dentro del nivel elegido se sirve la siguiente pregunta por `random_order`.
 
-## Desarrollo local
+## Desarrollo y despliegue
 
-No hay dependencias de producción ni proceso de compilación.
-
-```bash
-python3 -m http.server 8080
-```
-
-Abrir `http://localhost:8080`.
-
-Pruebas del dominio:
-
-```bash
-node --test tests/domain.test.mjs
-```
-
-## Publicación con GitHub Pages
-
-El repositorio incluye `.github/workflows/pages.yml`. En GitHub:
-
-1. Ve a **Settings → Pages**.
-2. En **Build and deployment → Source**, selecciona **GitHub Actions**.
-3. Haz push a `main`.
-
-El workflow publica la raíz del repositorio como artefacto estático.
-
-## Modelo de datos local
-
-IndexedDB mantiene cinco grupos de datos principales:
-
-- `banks`: metadatos de bancos, categorías y escalas/niveles.
-- `questions`: preguntas de cada banco y estado (`active`, `retired`, `discarded`).
-- `players`: jugadores globales reutilizables entre partidas.
-- `matches`: configuración de cada partida.
-- `events`: hechos de juego inmutables.
-
-Los cambios de juego se representan con eventos como `QUESTION_DRAWN`, `RESULT_RECORDED`, `QUESTION_EXPOSED`, `MATCH_CLOSED`, `EVENT_REVERTED` y `EVENT_RESTORED`.
-
-Las estadísticas se calculan a partir de los eventos activos, no se almacenan como totales editables.
-
-## Siguiente evolución recomendada
-
-- Importador directo de una exportación privada de la base relacional histórica actual.
-- Selector de reglas por partida (número objetivo de quesitos, política de reutilización, etc.).
-- Estadísticas por partida y comparativas temporales más avanzadas.
-- Cifrado opcional de copias completas con Web Crypto.
-- Sincronización multi-dispositivo solo si se añade deliberadamente un backend o un mecanismo de autenticación; no se debe incrustar un token de GitHub/Google en una web pública.
+No hay backend ni dependencia de LLM. GitHub Actions ejecuta `node --test tests/*.mjs` y, si las pruebas pasan, publica la aplicación en GitHub Pages.
