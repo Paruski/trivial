@@ -1,0 +1,4 @@
+﻿"level_key","scale_id","level_id_local","label","order","description"
+"S_DIFICULTAD_TRIVIAL_V1|CUR","S_DIFICULTAD_TRIVIAL_V1","CUR","curricular","1","Conocimiento curricular/general."
+"S_DIFICULTAD_TRIVIAL_V1|AUT","S_DIFICULTAD_TRIVIAL_V1","AUT","autodidacta","2","Conocimiento normalmente adquirido fuera del currículo básico."
+"S_DIFICULTAD_TRIVIAL_V1|NIC","S_DIFICULTAD_TRIVIAL_V1","NIC","nicho","3","Conocimiento especializado o poco frecuente."
