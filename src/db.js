@@ -11,14 +11,6 @@ const CSV_FILES = Object.freeze({
 });
 const QUESTION_FILES = ['AL','LI','FI','HI','IN','NE'].map((id) => `./data/questions-${id}.csv`);
 const ATTEMPT_FILES = ['J1','J2','J3'].map((id) => `./data/attempts-${id}.csv`);
-const CLEANUP_MIGRATION_KEY = 'migration:2026-08-19.2-clean-seed';
-const REMOVED_CANONICAL_QUESTION_KEYS = Object.freeze([
-  'B2026-08-18|FI-012',
-  'B2026-08-18|HI-007',
-  'B2026-08-18|IN-007',
-  'B2026-08-18|IN-018',
-]);
-const REMOVED_HISTORICAL_EXPOSURE_IDS = Object.freeze(['EX0001','EX0002','EX0003','EX0004','EX0005','EX0006']);
 
 function requestPromise(req) {
   return new Promise((resolve, reject) => {
@@ -86,25 +78,42 @@ export const db = {
   async eventsForMatch(matchId) { return this.getByIndex('events', 'matchId', matchId); }, async attemptsForMatch(matchId) { return this.getByIndex('attempts', 'matchId', matchId); }, async participantsForMatch(matchId) { return this.getByIndex('participants', 'matchId', matchId); }, async questionsForBank(bankId) { return this.getByIndex('questions', 'bankId', bankId); },
   async getMeta(key) { return (await this.get('meta', key))?.value; }, async setMeta(key, value) { return this.put('meta', { key, value }); },
   async putIfMissing(store, key, value) { if (await this.get(store, key)) return false; await this.put(store, value); return true; },
-  async applySeedMigrations(seed) {
-    if (await this.getMeta(CLEANUP_MIGRATION_KEY)) return;
-    await txPromise(['questions','exposures','attempts','banks'], 'readwrite', (stores) => {
-      for (const key of REMOVED_CANONICAL_QUESTION_KEYS) stores.questions.delete(key);
-      for (const id of REMOVED_HISTORICAL_EXPOSURE_IDS) stores.exposures.delete(id);
-      const attemptReq = stores.attempts.get('A0023');
-      attemptReq.onsuccess = () => {
-        const attempt = attemptReq.result;
-        if (!attempt) return;
-        stores.attempts.put({ ...attempt, correct:true, resultId:'ACI', quesitoAttempt:false, quesitoWon:false, notes:'ninguna; J2 acertó.' });
+  async reconcileCanonicalSeed(seed) {
+    const bankIds = new Set(seed.banks.map((row) => row.bankId));
+    const questionKeys = new Set(seed.questions.map((row) => row.questionKey));
+    const historicalMatchIds = new Set(seed.matches.filter((row) => row.source === 'historical_seed').map((row) => row.matchId));
+    const attemptIds = new Set(seed.attempts.filter((row) => historicalMatchIds.has(row.matchId)).map((row) => row.attemptId));
+    const exposureIds = new Set(seed.exposures.filter((row) => historicalMatchIds.has(row.matchId)).map((row) => row.exposureId));
+    await txPromise(['banks','questions','matches','participants','attempts','exposures'], 'readwrite', (stores) => {
+      const qCursor = stores.questions.openCursor();
+      qCursor.onsuccess = () => {
+        const cursor = qCursor.result; if (!cursor) return;
+        if (bankIds.has(cursor.value.bankId) && !questionKeys.has(cursor.value.questionKey)) cursor.delete();
+        cursor.continue();
       };
-      for (const bank of seed.banks) stores.banks.put(bank);
+      const aCursor = stores.attempts.openCursor();
+      aCursor.onsuccess = () => {
+        const cursor = aCursor.result; if (!cursor) return;
+        if (historicalMatchIds.has(cursor.value.matchId) && !attemptIds.has(cursor.value.attemptId)) cursor.delete();
+        cursor.continue();
+      };
+      const eCursor = stores.exposures.openCursor();
+      eCursor.onsuccess = () => {
+        const cursor = eCursor.result; if (!cursor) return;
+        if (historicalMatchIds.has(cursor.value.matchId) && !cursor.value.sourceEventId && !exposureIds.has(cursor.value.exposureId)) cursor.delete();
+        cursor.continue();
+      };
+      for (const row of seed.banks) stores.banks.put(row);
+      for (const row of seed.matches.filter((r) => historicalMatchIds.has(r.matchId))) stores.matches.put(row);
+      for (const row of seed.participants.filter((r) => historicalMatchIds.has(r.matchId))) stores.participants.put(row);
+      for (const row of seed.attempts.filter((r) => historicalMatchIds.has(r.matchId))) stores.attempts.put(row);
+      for (const row of seed.exposures.filter((r) => historicalMatchIds.has(r.matchId))) stores.exposures.put(row);
     });
-    await this.setMeta(CLEANUP_MIGRATION_KEY, true);
   },
   async ensureSeed(seed) {
     if (!seed?.seedVersion || !seed?.bank) throw new Error('Base integrada no válida');
     const applied = await this.getMeta('seedVersion'); if (applied === seed.seedVersion) return;
-    await this.applySeedMigrations(seed);
+    await this.reconcileCanonicalSeed(seed);
     for (const row of seed.banks) await this.put('banks', row); for (const row of seed.categories) await this.putIfMissing('categories', row.categoryId, row); for (const row of seed.levels) await this.putIfMissing('levels', row.levelKey, row); for (const row of seed.players) await this.putIfMissing('players', row.playerId, row); for (const row of seed.questions) await this.putIfMissing('questions', row.questionKey, row); for (const row of seed.matches) await this.putIfMissing('matches', row.matchId, row); for (const row of seed.participants) await this.putIfMissing('participants', row.matchPlayerId, row); for (const row of seed.attempts) await this.putIfMissing('attempts', row.attemptId, row); for (const row of seed.exposures) await this.putIfMissing('exposures', row.exposureId, row); for (const row of seed.events) await this.putIfMissing('events', row.eventId, row);
     await this.setMeta('seedVersion', seed.seedVersion); await this.setMeta('csvEncoding', 'UTF-8'); await this.setMeta('csvDialect', 'RFC4180-comma-CRLF-doublequote');
   },
