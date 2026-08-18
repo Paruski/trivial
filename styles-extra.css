@@ -1,0 +1,8 @@
+.active-player { border-color: var(--accent); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.quesito-row { display: grid; gap: .45rem; margin-bottom: .85rem; }
+.quesito-toggle { display: inline-flex; align-items: center; gap: .5rem; margin: .4rem 0 1rem; width: fit-content; }
+.quesito-toggle input { width: auto; }
+.stats-card { margin-top: 1rem; overflow-x: auto; }
+.stock-zero { opacity: .45; }
+.status-line { display:flex; gap:.45rem; flex-wrap:wrap; margin:.6rem 0 1rem; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 1rem 0; }
