@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#111827" />
+  <meta name="description" content="Trivial local, reversible y sin backend para GitHub Pages." />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>Trivial</title>
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <p class="eyebrow">TRIVIAL</p>
+      <h1>Partidas locales y reversibles</h1>
+    </div>
+    <nav class="tabs" aria-label="Secciones">
+      <button data-view="game" class="tab active">Partida</button>
+      <button data-view="banks" class="tab">Bancos</button>
+      <button data-view="stats" class="tab">Estadísticas</button>
+      <button data-view="backup" class="tab">Copias</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="view-game" class="view active" aria-labelledby="game-title">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">JUEGO</p>
+          <h2 id="game-title">Partida</h2>
+        </div>
+        <div class="actions">
+          <button id="new-match-btn" class="primary">Nueva partida</button>
+          <select id="match-picker" aria-label="Cambiar partida"></select>
+        </div>
+      </div>
+      <div id="game-root"></div>
+    </section>
+
+    <section id="view-banks" class="view" aria-labelledby="banks-title">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">DATOS</p>
+          <h2 id="banks-title">Bancos de preguntas</h2>
+        </div>
+        <label class="file-button">Importar CSV<input id="bank-file" type="file" accept=".csv,text/csv" hidden /></label>
+      </div>
+      <p class="notice">El banco no se publica con la web. Se guarda únicamente en este navegador. Así las respuestas no quedan expuestas en el repositorio.</p>
+      <div id="banks-root"></div>
+    </section>
+
+    <section id="view-stats" class="view" aria-labelledby="stats-title">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">ANÁLISIS</p>
+          <h2 id="stats-title">Estadísticas</h2>
+        </div>
+      </div>
+      <div id="stats-root"></div>
+    </section>
+
+    <section id="view-backup" class="view" aria-labelledby="backup-title">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">SEGURIDAD</p>
+          <h2 id="backup-title">Copias e importación</h2>
+        </div>
+      </div>
+      <div class="card backup-card">
+        <h3>Copia completa</h3>
+        <p>Incluye bancos cargados, preguntas, jugadores, partidas y registro de eventos.</p>
+        <div class="actions">
+          <button id="export-backup" class="primary">Exportar JSON</button>
+          <label class="file-button">Importar JSON<input id="import-backup" type="file" accept="application/json,.json" hidden /></label>
+        </div>
+        <p class="warning">Una copia completa contiene preguntas y respuestas. No la subas a un repositorio público.</p>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="new-match-dialog">
+    <form id="new-match-form" method="dialog">
+      <div class="dialog-head">
+        <div>
+          <p class="eyebrow">CONFIGURACIÓN</p>
+          <h2>Nueva partida</h2>
+        </div>
+        <button type="button" class="icon-button" id="close-match-dialog" aria-label="Cerrar">×</button>
+      </div>
+      <label>Nombre de la partida<input name="name" value="Nueva partida" required /></label>
+      <label>Banco<select name="bankId" id="new-match-bank" required></select></label>
+      <label>Jugadores <span class="muted">(uno por línea; se reutilizan por nombre)</span><textarea name="players" rows="5" placeholder="J1\nJ2\nJ3" required></textarea></label>
+      <fieldset>
+        <legend>Categorías habilitadas</legend>
+        <div id="new-match-categories" class="check-grid"></div>
+      </fieldset>
+      <fieldset>
+        <legend>Niveles habilitados</legend>
+        <div id="new-match-levels" class="check-grid"></div>
+      </fieldset>
+      <div class="dialog-actions">
+        <button type="button" id="cancel-match">Cancelar</button>
+        <button class="primary" value="default">Crear partida</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>
