@@ -1,4 +1,4 @@
-const CACHE = 'trivial-pages-v5-csv';
+const CACHE = 'trivial-pages-v6-clean-seed';
 const ASSETS = [
   './','./index.html','./styles.css','./styles-extra.css','./manifest.webmanifest',
   './src/app.js','./src/db.js','./src/domain.js','./src/csv.js','./src/import-export.js',
