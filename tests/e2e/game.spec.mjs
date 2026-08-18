@@ -52,6 +52,6 @@ test('flujo real multijugador, descarte, undo/redo, persistencia y segunda pesta
   await expect(secondPage.getByText('Partida finalizada')).toBeVisible();
   await secondPage.getByRole('button', { name: 'Estadísticas' }).click();
   await expect(secondPage.getByText('Jugador × categoría')).toBeVisible();
-  await expect(secondPage.getByText('J1').first()).toBeVisible();
-  await expect(secondPage.getByText('J3').first()).toBeVisible();
+  await expect(secondPage.locator('#stats-root').getByText('J1', { exact: true }).first()).toBeVisible();
+  await expect(secondPage.locator('#stats-root').getByText('J3', { exact: true }).first()).toBeVisible();
 });
