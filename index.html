@@ -4,21 +4,22 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#111827" />
-  <meta name="description" content="Trivial local, reversible y sin backend para GitHub Pages." />
+  <meta name="description" content="Trivial autosuficiente para J1, J2 y J3, con banco integrado, histórico y estadísticas." />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles-extra.css" />
   <title>Trivial</title>
 </head>
 <body>
   <header class="app-header">
     <div>
       <p class="eyebrow">TRIVIAL</p>
-      <h1>Partidas locales y reversibles</h1>
+      <h1>Partidas reproducibles y base integrada</h1>
     </div>
     <nav class="tabs" aria-label="Secciones">
       <button data-view="game" class="tab active">Partida</button>
-      <button data-view="banks" class="tab">Bancos</button>
       <button data-view="stats" class="tab">Estadísticas</button>
+      <button data-view="base" class="tab">Base</button>
       <button data-view="backup" class="tab">Copias</button>
     </nav>
   </header>
@@ -26,10 +27,7 @@
   <main>
     <section id="view-game" class="view active" aria-labelledby="game-title">
       <div class="section-head">
-        <div>
-          <p class="eyebrow">JUEGO</p>
-          <h2 id="game-title">Partida</h2>
-        </div>
+        <div><p class="eyebrow">JUEGO</p><h2 id="game-title">Partida</h2></div>
         <div class="actions">
           <button id="new-match-btn" class="primary">Nueva partida</button>
           <select id="match-picker" aria-label="Cambiar partida"></select>
@@ -38,43 +36,28 @@
       <div id="game-root"></div>
     </section>
 
-    <section id="view-banks" class="view" aria-labelledby="banks-title">
-      <div class="section-head">
-        <div>
-          <p class="eyebrow">DATOS</p>
-          <h2 id="banks-title">Bancos de preguntas</h2>
-        </div>
-        <label class="file-button">Importar CSV<input id="bank-file" type="file" accept=".csv,text/csv" hidden /></label>
-      </div>
-      <p class="notice">El banco no se publica con la web. Se guarda únicamente en este navegador. Así las respuestas no quedan expuestas en el repositorio.</p>
-      <div id="banks-root"></div>
-    </section>
-
     <section id="view-stats" class="view" aria-labelledby="stats-title">
-      <div class="section-head">
-        <div>
-          <p class="eyebrow">ANÁLISIS</p>
-          <h2 id="stats-title">Estadísticas</h2>
-        </div>
-      </div>
+      <div class="section-head"><div><p class="eyebrow">ANÁLISIS</p><h2 id="stats-title">Estadísticas históricas</h2></div></div>
       <div id="stats-root"></div>
     </section>
 
+    <section id="view-base" class="view" aria-labelledby="base-title">
+      <div class="section-head"><div><p class="eyebrow">DATOS</p><h2 id="base-title">Base de juego</h2></div></div>
+      <p class="notice">El banco, J1/J2/J3, la partida histórica y las reglas están incluidos en la web. IndexedDB conserva automáticamente las partidas nuevas en este navegador.</p>
+      <div id="base-root"></div>
+    </section>
+
     <section id="view-backup" class="view" aria-labelledby="backup-title">
-      <div class="section-head">
-        <div>
-          <p class="eyebrow">SEGURIDAD</p>
-          <h2 id="backup-title">Copias e importación</h2>
-        </div>
-      </div>
+      <div class="section-head"><div><p class="eyebrow">SEGURIDAD</p><h2 id="backup-title">Copias y restauración</h2></div></div>
       <div class="card backup-card">
-        <h3>Copia completa</h3>
-        <p>Incluye bancos cargados, preguntas, jugadores, partidas y registro de eventos.</p>
+        <h3>Base local completa</h3>
+        <p>La web guarda cada jugada automáticamente. La copia JSON incluye banco, histórico y partidas locales.</p>
         <div class="actions">
           <button id="export-backup" class="primary">Exportar JSON</button>
           <label class="file-button">Importar JSON<input id="import-backup" type="file" accept="application/json,.json" hidden /></label>
+          <button id="reset-base" class="danger">Restaurar base original</button>
         </div>
-        <p class="warning">Una copia completa contiene preguntas y respuestas. No la subas a un repositorio público.</p>
+        <p class="warning">El repositorio es público: las preguntas y respuestas forman parte deliberadamente del código y pueden inspeccionarse.</p>
       </div>
     </section>
   </main>
@@ -82,27 +65,15 @@
   <dialog id="new-match-dialog">
     <form id="new-match-form" method="dialog">
       <div class="dialog-head">
-        <div>
-          <p class="eyebrow">CONFIGURACIÓN</p>
-          <h2>Nueva partida</h2>
-        </div>
+        <div><p class="eyebrow">CONFIGURACIÓN</p><h2>Nueva partida</h2></div>
         <button type="button" class="icon-button" id="close-match-dialog" aria-label="Cerrar">×</button>
       </div>
-      <label>Nombre de la partida<input name="name" value="Nueva partida" required /></label>
-      <label>Banco<select name="bankId" id="new-match-bank" required></select></label>
-      <label>Jugadores <span class="muted">(uno por línea; se reutilizan por nombre)</span><textarea name="players" rows="5" placeholder="J1\nJ2\nJ3" required></textarea></label>
-      <fieldset>
-        <legend>Categorías habilitadas</legend>
-        <div id="new-match-categories" class="check-grid"></div>
-      </fieldset>
-      <fieldset>
-        <legend>Niveles habilitados</legend>
-        <div id="new-match-levels" class="check-grid"></div>
-      </fieldset>
-      <div class="dialog-actions">
-        <button type="button" id="cancel-match">Cancelar</button>
-        <button class="primary" value="default">Crear partida</button>
-      </div>
+      <label>Nombre de la partida <span class="muted">(opcional)</span><input name="name" placeholder="Partida" /></label>
+      <fieldset><legend>Jugadores · selecciona de 1 a 3</legend><div id="new-match-players" class="check-grid"></div></fieldset>
+      <fieldset><legend>Categorías incluidas</legend><div id="new-match-categories" class="check-grid"></div></fieldset>
+      <fieldset><legend>Niveles incluidos</legend><div id="new-match-levels" class="check-grid"></div></fieldset>
+      <p class="notice">La semilla, los pesos de nivel y el orden de jugadores se fijan al crear la partida. El turno rota automáticamente.</p>
+      <div class="dialog-actions"><button type="button" id="cancel-match">Cancelar</button><button class="primary" value="default">Crear partida</button></div>
     </form>
   </dialog>
 
