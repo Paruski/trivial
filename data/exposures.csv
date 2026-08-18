@@ -1,4 +1,4 @@
-﻿"exposure_id","match_id","bank_id","question_key","question_id","player_id","question_no","type","counts_as_attempt","reason","source","active","source_event_id"
+"exposure_id","match_id","bank_id","question_key","question_id","player_id","question_no","type","counts_as_attempt","reason","source","active","source_event_id"
 "EX0001","P2026-08-18","B2026-08-18","B2026-08-18|FI-012","FI-012","J1","","anulada_expuesta","false","Expuesta por error de categoría y anulada antes de respuesta.","registro_partida","true",""
 "EX0002","P2026-08-18","B2026-08-18","B2026-08-18|FI-012","FI-012","J3","","descartada_expuesta","false","Se mostró una pregunta ya descartada; se anuló antes de respuesta.","registro_partida","true",""
 "EX0003","P2026-08-18","B2026-08-18","B2026-08-18|HI-007","HI-007","","","contaminada","false","Revelada al usuario durante la auditoría de datos; retirada del juego.","limpieza_2026-08-18","true",""

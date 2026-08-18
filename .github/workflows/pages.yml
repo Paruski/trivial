@@ -22,7 +22,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-      - run: node --test tests/domain.test.mjs
+      - run: node --test tests/*.mjs
 
   deploy:
     needs: test

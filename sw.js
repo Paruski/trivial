@@ -1,9 +1,11 @@
-const CACHE = 'trivial-pages-v4';
+const CACHE = 'trivial-pages-v5-csv';
 const ASSETS = [
   './','./index.html','./styles.css','./styles-extra.css','./manifest.webmanifest',
-  './data/meta.json','./data/questions-AL.json','./data/questions-LI.json','./data/questions-FI.json','./data/questions-HI.json','./data/questions-IN.json','./data/questions-NE.json',
-  './data/attempts-J1.json','./data/attempts-J2.json','./data/attempts-J3.json',
-  './src/app.js','./src/db.js','./src/domain.js','./src/import-export.js'
+  './src/app.js','./src/db.js','./src/domain.js','./src/csv.js','./src/import-export.js',
+  './data/meta.csv','./data/banks.csv','./data/categories.csv','./data/levels.csv',
+  './data/questions-AL.csv','./data/questions-LI.csv','./data/questions-FI.csv','./data/questions-HI.csv','./data/questions-IN.csv','./data/questions-NE.csv',
+  './data/players.csv','./data/matches.csv','./data/participants.csv',
+  './data/attempts-J1.csv','./data/attempts-J2.csv','./data/attempts-J3.csv','./data/exposures.csv','./data/events.csv'
 ];
 self.addEventListener('install',event=>{self.skipWaiting();event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)))});
 self.addEventListener('activate',event=>event.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))])));

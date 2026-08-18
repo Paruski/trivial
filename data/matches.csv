@@ -1,2 +1,2 @@
-﻿"match_id","name","bank_id","player_ids","enabled_category_ids","enabled_level_keys","status","created_at","closed_at","close_reason","seed","source"
-"P2026-08-18","Partida 2026-08-18","B2026-08-18","J1|J2|J3","AL|LI|FI|HI|IN|NE","S_DIFICULTAD_TRIVIAL_V1|CUR;S_DIFICULTAD_TRIVIAL_V1|AUT;S_DIFICULTAD_TRIVIAL_V1|NIC","closed","2026-08-18T00:00:00+02:00","2026-08-18T23:00:00+02:00","Tiempo límite","historical-P2026-08-18","historical_seed"
+"match_id","name","bank_id","player_ids","enabled_category_ids","enabled_level_keys","status","created_at","closed_at","close_reason","seed","source"
+"P2026-08-18","Partida 2026-08-18","B2026-08-18","J1;J2;J3","AL;LI;FI;HI;IN;NE","S_DIFICULTAD_TRIVIAL_V1|CUR;S_DIFICULTAD_TRIVIAL_V1|AUT;S_DIFICULTAD_TRIVIAL_V1|NIC","closed","2026-08-18T00:00:00+02:00","2026-08-18T23:00:00+02:00","Tiempo límite","historical-P2026-08-18","historical_seed"

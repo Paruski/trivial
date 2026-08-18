@@ -1,4 +1,4 @@
-﻿"question_key","bank_id","question_id","category_id","level_key","prompt","answer","explanation","status","source_status","random_order"
+"question_key","bank_id","question_id","category_id","level_key","prompt","answer","explanation","status","source_status","random_order"
 "B2026-08-18|AL-001","B2026-08-18","AL-001","AL","S_DIFICULTAD_TRIVIAL_V1|CUR","¿Qué pintor español es autor de «Las meninas»?","Diego Velázquez.","Velázquez pintó la obra en 1656 para la corte de Felipe IV; hoy se conserva en el Museo del Prado.","retired","administrada","5"
 "B2026-08-18|AL-002","B2026-08-18","AL-002","AL","S_DIFICULTAD_TRIVIAL_V1|CUR","¿Quién escribió la novela «La Regenta»?","Leopoldo Alas, «Clarín».","Publicada en 1884-1885, es una de las grandes novelas del realismo español.","retired","administrada","9"
 "B2026-08-18|AL-003","B2026-08-18","AL-003","AL","S_DIFICULTAD_TRIVIAL_V1|CUR","¿A qué movimiento literario del siglo XIX pertenecen Gustavo Adolfo Bécquer y José de Espronceda?","Al Romanticismo.","Ambos son figuras centrales del Romanticismo español, aunque Bécquer pertenece a una fase tardía del movimiento.","active","no administrada","19"

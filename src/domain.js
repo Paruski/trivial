@@ -33,24 +33,11 @@ export function getActiveEvents(events) {
 
 export function deriveLiveState(match, events) {
   const active = getActiveEvents(events);
-  const state = {
-    status: match.status ?? 'open',
-    currentDraw: null,
-    answerRevealed: false,
-    timeline: active,
-  };
+  const state = { status: match.status ?? 'open', currentDraw: null, answerRevealed: false, timeline: active };
   for (const event of active) {
     switch (event.type) {
       case EVENT_TYPES.QUESTION_DRAWN:
-        state.currentDraw = {
-          eventId: event.eventId,
-          questionKey: event.payload.questionKey,
-          playerId: event.payload.playerId,
-          categoryId: event.payload.categoryId,
-          levelKey: event.payload.levelKey,
-          quesitoAttempt: Boolean(event.payload.quesitoAttempt),
-          drawOrdinal: event.payload.drawOrdinal,
-        };
+        state.currentDraw = { eventId: event.eventId, questionKey: event.payload.questionKey, playerId: event.payload.playerId, categoryId: event.payload.categoryId, levelKey: event.payload.levelKey, quesitoAttempt: Boolean(event.payload.quesitoAttempt), drawOrdinal: event.payload.drawOrdinal };
         state.answerRevealed = false;
         break;
       case EVENT_TYPES.ANSWER_REVEALED:
@@ -58,16 +45,10 @@ export function deriveLiveState(match, events) {
         break;
       case EVENT_TYPES.RESULT_RECORDED:
       case EVENT_TYPES.QUESTION_DISCARDED:
-        if (state.currentDraw?.eventId === event.payload?.drawEventId) {
-          state.currentDraw = null;
-          state.answerRevealed = false;
-        }
+        if (state.currentDraw?.eventId === event.payload?.drawEventId) { state.currentDraw = null; state.answerRevealed = false; }
         break;
-      case EVENT_TYPES.MATCH_CLOSED:
-        state.status = 'closed';
-        break;
-      default:
-        break;
+      case EVENT_TYPES.MATCH_CLOSED: state.status = 'closed'; break;
+      default: break;
     }
   }
   return state;
@@ -76,10 +57,7 @@ export function deriveLiveState(match, events) {
 export function hash32(text) {
   let h = 0x811c9dc5;
   const s = String(text);
-  for (let i = 0; i < s.length; i += 1) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 0x01000193) >>> 0;
-  }
+  for (let i = 0; i < s.length; i += 1) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
   return h >>> 0;
 }
 
@@ -107,26 +85,16 @@ export function baseLevelWeightsForCategory({ questions, categoryId, enabledLeve
 }
 
 export function freezeLevelWeights({ questions, categoryIds, enabledLevelKeys }) {
-  return Object.fromEntries(categoryIds.map((categoryId) => [
-    categoryId,
-    baseLevelWeightsForCategory({ questions, categoryId, enabledLevelKeys }),
-  ]));
+  return Object.fromEntries(categoryIds.map((categoryId) => [categoryId, baseLevelWeightsForCategory({ questions, categoryId, enabledLevelKeys })]));
 }
 
 export function chooseLevelForDraw({ matchSeed, drawOrdinal, categoryId, playerId, enabledLevelKeys, frozenWeights, questions }) {
-  const available = enabledLevelKeys.filter((levelKey) => questions.some(
-    (q) => q.categoryId === categoryId && q.levelKey === levelKey && q.status === 'active',
-  ));
+  const available = enabledLevelKeys.filter((levelKey) => questions.some((q) => q.categoryId === categoryId && q.levelKey === levelKey && q.status === 'active'));
   if (!available.length) return null;
-
   const weights = frozenWeights?.[categoryId] ?? baseLevelWeightsForCategory({ questions, categoryId, enabledLevelKeys });
   const weighted = available.map((levelKey) => ({ levelKey, weight: Math.max(0, Number(weights[levelKey] ?? 0)) }));
   let total = weighted.reduce((sum, item) => sum + item.weight, 0);
-  if (total <= 0) {
-    for (const item of weighted) item.weight = 1;
-    total = weighted.length;
-  }
-
+  if (total <= 0) { for (const item of weighted) item.weight = 1; total = weighted.length; }
   const unit = deterministicUnit(`${matchSeed}|level|${drawOrdinal}|${categoryId}|${playerId}`);
   let cursor = unit * total;
   for (const item of weighted) {
@@ -138,14 +106,14 @@ export function chooseLevelForDraw({ matchSeed, drawOrdinal, categoryId, playerI
 }
 
 export function nextQuestionWithinLevel({ questions, categoryId, levelKey }) {
-  return questions
-    .filter((q) => q.status === 'active' && q.categoryId === categoryId && q.levelKey === levelKey)
-    .sort((a, b) => {
-      const ao = Number.isFinite(Number(a.randomOrder)) ? Number(a.randomOrder) : Number.MAX_SAFE_INTEGER;
-      const bo = Number.isFinite(Number(b.randomOrder)) ? Number(b.randomOrder) : Number.MAX_SAFE_INTEGER;
-      return ao - bo || String(a.questionId).localeCompare(String(b.questionId));
-    })[0] ?? null;
+  return questions.filter((q) => q.status === 'active' && q.categoryId === categoryId && q.levelKey === levelKey).sort((a, b) => {
+    const ao = Number.isFinite(Number(a.randomOrder)) ? Number(a.randomOrder) : Number.MAX_SAFE_INTEGER;
+    const bo = Number.isFinite(Number(b.randomOrder)) ? Number(b.randomOrder) : Number.MAX_SAFE_INTEGER;
+    return ao - bo || String(a.questionId).localeCompare(String(b.questionId));
+  })[0] ?? null;
 }
+
+export function selectReplacementQuestion({ questions, categoryId, levelKey }) { return nextQuestionWithinLevel({ questions, categoryId, levelKey }); }
 
 export function selectQuestionForDraw(args) {
   const level = chooseLevelForDraw(args);
@@ -154,9 +122,7 @@ export function selectQuestionForDraw(args) {
   return question ? { question, ...level } : null;
 }
 
-export function activeComputableAttempts(attempts) {
-  return attempts.filter((a) => a.active !== false && a.computable !== false && a.correct !== null && a.correct !== undefined);
-}
+export function activeComputableAttempts(attempts) { return attempts.filter((a) => a.active !== false && a.computable !== false && a.correct !== null && a.correct !== undefined); }
 
 export function nextPlayerId(match, attempts) {
   const ids = match.playerIds ?? [];
@@ -169,60 +135,30 @@ export function quesitosByPlayer(attempts) {
   const map = new Map();
   for (const a of attempts) {
     if (a.active === false || !a.quesitoWon) continue;
-    const set = map.get(a.playerId) ?? new Set();
-    set.add(a.categoryId);
-    map.set(a.playerId, set);
+    const set = map.get(a.playerId) ?? new Set(); set.add(a.categoryId); map.set(a.playerId, set);
   }
   return map;
 }
 
 export function computeStats(attempts, matches = []) {
   const active = activeComputableAttempts(attempts);
-  const byPlayer = new Map();
-  const byPlayerCategory = new Map();
-  const byPlayerLevel = new Map();
-  const byMatchPlayer = new Map();
-  const ensure = (map, key, seed) => {
-    if (!map.has(key)) map.set(key, { ...seed });
-    return map.get(key);
-  };
-  const bump = (row, a) => {
-    row.resolved += 1;
-    row.correct += a.correct ? 1 : 0;
-    row.wrong += a.correct ? 0 : 1;
-    row.quesitoAttempts = (row.quesitoAttempts ?? 0) + (a.quesitoAttempt ? 1 : 0);
-    row.quesitosWon = (row.quesitosWon ?? 0) + (a.quesitoWon ? 1 : 0);
-  };
-
+  const byPlayer = new Map(), byPlayerCategory = new Map(), byPlayerLevel = new Map(), byMatchPlayer = new Map();
+  const ensure = (map, key, seed) => { if (!map.has(key)) map.set(key, { ...seed }); return map.get(key); };
+  const bump = (row, a) => { row.resolved += 1; row.correct += a.correct ? 1 : 0; row.wrong += a.correct ? 0 : 1; row.quesitoAttempts = (row.quesitoAttempts ?? 0) + (a.quesitoAttempt ? 1 : 0); row.quesitosWon = (row.quesitosWon ?? 0) + (a.quesitoWon ? 1 : 0); };
   for (const a of active) {
     bump(ensure(byPlayer, a.playerId, { playerId: a.playerId, resolved: 0, correct: 0, wrong: 0, quesitoAttempts: 0, quesitosWon: 0 }), a);
     bump(ensure(byPlayerCategory, `${a.playerId}|${a.categoryId}`, { playerId: a.playerId, categoryId: a.categoryId, resolved: 0, correct: 0, wrong: 0, quesitoAttempts: 0, quesitosWon: 0 }), a);
     bump(ensure(byPlayerLevel, `${a.playerId}|${a.levelKey}`, { playerId: a.playerId, levelKey: a.levelKey, resolved: 0, correct: 0, wrong: 0, quesitoAttempts: 0, quesitosWon: 0 }), a);
     bump(ensure(byMatchPlayer, `${a.matchId}|${a.playerId}`, { matchId: a.matchId, playerId: a.playerId, resolved: 0, correct: 0, wrong: 0, quesitoAttempts: 0, quesitosWon: 0 }), a);
   }
-
-  for (const map of [byPlayer, byPlayerCategory, byPlayerLevel, byMatchPlayer]) {
-    for (const row of map.values()) row.precision = row.resolved ? row.correct / row.resolved : 0;
-  }
-
+  for (const map of [byPlayer, byPlayerCategory, byPlayerLevel, byMatchPlayer]) for (const row of map.values()) row.precision = row.resolved ? row.correct / row.resolved : 0;
   const matchMap = new Map(matches.map((m) => [m.matchId, m]));
-  const wins = new Map();
-  const grouped = new Map();
-  for (const row of byMatchPlayer.values()) {
-    if (!grouped.has(row.matchId)) grouped.set(row.matchId, []);
-    grouped.get(row.matchId).push(row);
-  }
+  const wins = new Map(), grouped = new Map();
+  for (const row of byMatchPlayer.values()) { if (!grouped.has(row.matchId)) grouped.set(row.matchId, []); grouped.get(row.matchId).push(row); }
   for (const [matchId, rows] of grouped.entries()) {
     if (matchMap.get(matchId)?.status !== 'closed' || !rows.length) continue;
     const best = Math.max(...rows.map((r) => r.quesitosWon));
     for (const row of rows.filter((r) => r.quesitosWon === best)) wins.set(row.playerId, (wins.get(row.playerId) ?? 0) + 1);
   }
-
-  return {
-    byPlayer: [...byPlayer.values()],
-    byPlayerCategory: [...byPlayerCategory.values()],
-    byPlayerLevel: [...byPlayerLevel.values()],
-    byMatchPlayer: [...byMatchPlayer.values()],
-    wins,
-  };
+  return { byPlayer: [...byPlayer.values()], byPlayerCategory: [...byPlayerCategory.values()], byPlayerLevel: [...byPlayerLevel.values()], byMatchPlayer: [...byMatchPlayer.values()], wins };
 }

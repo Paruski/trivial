@@ -1,55 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EVENT_TYPES, deriveMatchState, getActiveEvents, getRevertedEventIds, selectNextQuestion, computeStats } from '../src/domain.js';
-
-const match = { matchId: 'm1', status: 'open', playerIds: ['p1','p2'] };
-const evt = (seq, type, payload={}) => ({ eventId:`e${seq}`, matchId:'m1', seq, type, payload });
-
-test('selectNextQuestion respeta estado, categoria, nivel y orden', () => {
-  const questions = [
-    {questionKey:'q1',questionId:'1',status:'active',categoryIds:['A'],levelKey:'L1',randomOrder:3},
-    {questionKey:'q2',questionId:'2',status:'discarded',categoryIds:['A'],levelKey:'L1',randomOrder:1},
-    {questionKey:'q3',questionId:'3',status:'active',categoryIds:['A'],levelKey:'L2',randomOrder:2},
-    {questionKey:'q4',questionId:'4',status:'active',categoryIds:['B'],levelKey:'L1',randomOrder:1},
-  ];
-  const q = selectNextQuestion({questions, categoryId:'A', enabledLevelKeys:['L1'], usedQuestionKeys:new Set()});
-  assert.equal(q.questionKey, 'q1');
-});
-
-test('deriveMatchState concede quesito y undo revierte resultado', () => {
-  const events = [
-    evt(1, EVENT_TYPES.MATCH_CREATED, {playerIds:['p1','p2']}),
-    evt(2, EVENT_TYPES.QUESTION_DRAWN, {questionKey:'q1',playerId:'p1',categoryId:'A',levelKey:'L1',quesitoAttempt:true}),
-    evt(3, EVENT_TYPES.RESULT_RECORDED, {drawEventId:'e2',questionKey:'q1',playerId:'p1',categoryId:'A',levelKey:'L1',correct:true,quesitoAttempt:true,quesitoWon:true}),
-    evt(4, EVENT_TYPES.EVENT_REVERTED, {targetEventId:'e3'}),
-  ];
-  const state = deriveMatchState(match, events);
-  assert.equal(state.currentDraw?.quesitoAttempt, true);
-  assert.equal(state.results.length, 0);
-  assert.equal(state.currentDraw?.questionKey, 'q1');
-  assert.equal(state.quesitosByPlayer.get('p1')?.size ?? 0, 0);
-});
-
-test('redo vuelve a activar un evento', () => {
-  const events = [
-    evt(1, EVENT_TYPES.MATCH_CREATED, {playerIds:['p1']}),
-    evt(2, EVENT_TYPES.TURN_SET, {playerId:'p1'}),
-    evt(3, EVENT_TYPES.EVENT_REVERTED, {targetEventId:'e2'}),
-    evt(4, EVENT_TYPES.EVENT_RESTORED, {targetEventId:'e2'}),
-  ];
-  assert.equal(getRevertedEventIds(events).size, 0);
-  assert.ok(getActiveEvents(events).some((e)=>e.eventId==='e2'));
-});
-
-test('computeStats excluye eventos revertidos', () => {
-  const matches = [{matchId:'m1'}];
-  const events = [
-    evt(1, EVENT_TYPES.RESULT_RECORDED, {playerId:'p1',categoryId:'A',levelKey:'L1',correct:true,quesitoAttempt:false,quesitoWon:false}),
-    evt(2, EVENT_TYPES.RESULT_RECORDED, {playerId:'p1',categoryId:'A',levelKey:'L1',correct:false,quesitoAttempt:false,quesitoWon:false}),
-    evt(3, EVENT_TYPES.EVENT_REVERTED, {targetEventId:'e2'}),
-  ];
-  const stats = computeStats(matches, events);
-  assert.equal(stats.byPlayer[0].resolved, 1);
-  assert.equal(stats.byPlayer[0].correct, 1);
-  assert.equal(stats.byPlayer[0].precision, 1);
-});
+import { EVENT_TYPES, chooseLevelForDraw, computeStats, deriveLiveState, freezeLevelWeights, getActiveEvents, nextPlayerId, nextQuestionWithinLevel, selectQuestionForDraw, selectReplacementQuestion } from '../src/domain.js';
+const qs=[{questionKey:'q1',questionId:'1',categoryId:'A',levelKey:'L1',status:'active',randomOrder:3},{questionKey:'q2',questionId:'2',categoryId:'A',levelKey:'L1',status:'active',randomOrder:1},{questionKey:'q3',questionId:'3',categoryId:'A',levelKey:'L2',status:'active',randomOrder:2},{questionKey:'q4',questionId:'4',categoryId:'A',levelKey:'L2',status:'retired',randomOrder:1},{questionKey:'q5',questionId:'5',categoryId:'A',levelKey:'L3',status:'discarded',randomOrder:1}];
+test('la pregunta dentro del nivel sigue el orden prealeatorizado',()=>assert.equal(nextQuestionWithinLevel({questions:qs,categoryId:'A',levelKey:'L1'}).questionKey,'q2'));
+test('los pesos base quedan congelados y no dependen del stock restante',()=>{const frozen=freezeLevelWeights({questions:qs,categoryIds:['A'],enabledLevelKeys:['L1','L2','L3']});assert.deepEqual(frozen.A,{L1:2,L2:2,L3:1});const depleted=qs.map(q=>q.questionKey==='q1'?{...q,status:'retired'}:q);const pick=chooseLevelForDraw({matchSeed:'abc',drawOrdinal:7,categoryId:'A',playerId:'J1',enabledLevelKeys:['L1','L2','L3'],frozenWeights:frozen,questions:depleted});assert.ok(['L1','L2'].includes(pick.levelKey));assert.deepEqual(pick.weights,{L1:2,L2:2})});
+test('un nivel agotado se excluye y el resto conserva sus pesos originales',()=>{const frozen={A:{L1:7,L2:2,L3:1}};const onlyL2=qs.map(q=>({...q,status:q.levelKey==='L2'&&q.questionKey==='q3'?'active':'retired'}));const pick=chooseLevelForDraw({matchSeed:'x',drawOrdinal:1,categoryId:'A',playerId:'J2',enabledLevelKeys:['L1','L2','L3'],frozenWeights:frozen,questions:onlyL2});assert.equal(pick.levelKey,'L2');assert.deepEqual(pick.weights,{L2:2})});
+test('un descarte se sustituye primero por una pregunta del mismo nivel',()=>assert.equal(selectReplacementQuestion({questions:qs,categoryId:'A',levelKey:'L1'}).questionKey,'q2'));
+test('la selección completa es determinista para la misma semilla e historial',()=>{const args={matchSeed:'seed',drawOrdinal:3,categoryId:'A',playerId:'J3',enabledLevelKeys:['L1','L2'],frozenWeights:{A:{L1:7,L2:3}},questions:qs};assert.deepEqual(selectQuestionForDraw(args),selectQuestionForDraw(args))});
+test('el turno rota automáticamente para uno, dos o tres jugadores',()=>{const attempts=[{matchId:'m',active:true,computable:true,correct:true},{matchId:'m',active:true,computable:true,correct:false}];assert.equal(nextPlayerId({matchId:'m',playerIds:['J1']},attempts),'J1');assert.equal(nextPlayerId({matchId:'m',playerIds:['J1','J3']},attempts.slice(0,1)),'J3');assert.equal(nextPlayerId({matchId:'m',playerIds:['J1','J2','J3']},attempts),'J3')});
+test('deshacer un resultado devuelve la pregunta actual en el estado derivado',()=>{const events=[{eventId:'e1',seq:1,type:EVENT_TYPES.QUESTION_DRAWN,payload:{questionKey:'q1',playerId:'J1',categoryId:'A',levelKey:'L1'}},{eventId:'e2',seq:2,type:EVENT_TYPES.RESULT_RECORDED,payload:{drawEventId:'e1',playerId:'J1',correct:true}},{eventId:'e3',seq:3,type:EVENT_TYPES.EVENT_REVERTED,payload:{targetEventId:'e2'}}];const state=deriveLiveState({status:'open'},events);assert.equal(state.currentDraw.eventId,'e1');assert.equal(getActiveEvents(events).some(e=>e.eventId==='e2'),false)});
+test('estadísticas ignoran intentos no computables e inactivos',()=>{const attempts=[{matchId:'m',playerId:'J1',categoryId:'A',levelKey:'L1',active:true,computable:true,correct:true,quesitoAttempt:false,quesitoWon:false},{matchId:'m',playerId:'J1',categoryId:'A',levelKey:'L1',active:true,computable:false,correct:null,quesitoAttempt:false,quesitoWon:false},{matchId:'m',playerId:'J1',categoryId:'A',levelKey:'L1',active:false,computable:true,correct:false,quesitoAttempt:false,quesitoWon:false}];const stats=computeStats(attempts,[{matchId:'m',status:'open'}]);assert.equal(stats.byPlayer[0].resolved,1);assert.equal(stats.byPlayer[0].precision,1)});
