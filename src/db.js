@@ -66,10 +66,21 @@ function txPromise(storeNames, mode, fn) {
   }));
 }
 
-async function loadSeed() {
-  const response = await fetch('./data/seed.json', { cache: 'no-store' });
-  if (!response.ok) throw new Error(`No se pudo cargar la base integrada (${response.status})`);
+async function fetchJson(path) {
+  const response = await fetch(path, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`No se pudo cargar ${path} (${response.status})`);
   return response.json();
+}
+
+async function loadSeed() {
+  const meta = await fetchJson('./data/meta.json');
+  const [qAL,qLI,qFI,qHI,qIN,qNE,aJ1,aJ2,aJ3] = await Promise.all([
+    fetchJson('./data/questions-AL.json'), fetchJson('./data/questions-LI.json'),
+    fetchJson('./data/questions-FI.json'), fetchJson('./data/questions-HI.json'),
+    fetchJson('./data/questions-IN.json'), fetchJson('./data/questions-NE.json'),
+    fetchJson('./data/attempts-J1.json'), fetchJson('./data/attempts-J2.json'), fetchJson('./data/attempts-J3.json'),
+  ]);
+  return { ...meta, questions: [...qAL,...qLI,...qFI,...qHI,...qIN,...qNE], attempts: [...aJ1,...aJ2,...aJ3] };
 }
 
 export const db = {
