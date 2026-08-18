@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const EVENT_TYPES = Object.freeze({
   MATCH_CREATED: 'MATCH_CREATED',
@@ -114,8 +114,59 @@ export function eligibleQuestions({ questions, categoryId, enabledLevelKeys = []
     });
 }
 
+export function baseLevelWeights({ questions, categoryId, enabledLevelKeys = [], levelWeights = null }) {
+  const enabled = new Set(enabledLevelKeys);
+  const weights = new Map();
+  for (const q of questions) {
+    if (!(q.categoryIds ?? []).includes(categoryId)) continue;
+    if (enabled.size && !enabled.has(q.levelKey)) continue;
+    weights.set(q.levelKey, (weights.get(q.levelKey) ?? 0) + 1);
+  }
+  if (levelWeights) {
+    for (const [levelKey, weight] of Object.entries(levelWeights)) {
+      if (!enabled.size || enabled.has(levelKey)) weights.set(levelKey, Math.max(0, Number(weight) || 0));
+    }
+  }
+  return weights;
+}
+
+export function chooseWeightedLevel(availableLevelKeys, weights, rng = Math.random) {
+  if (!availableLevelKeys.length) return null;
+  const normalized = availableLevelKeys.map((levelKey) => ({
+    levelKey,
+    weight: Math.max(0, Number(weights.get(levelKey)) || 0),
+  }));
+  let total = normalized.reduce((sum, item) => sum + item.weight, 0);
+  if (total <= 0) {
+    normalized.forEach((item) => { item.weight = 1; });
+    total = normalized.length;
+  }
+  const unit = Math.min(0.9999999999999999, Math.max(0, Number(rng()) || 0));
+  let roll = unit * total;
+  for (const item of normalized) {
+    roll -= item.weight;
+    if (roll < 0) return item.levelKey;
+  }
+  return normalized.at(-1).levelKey;
+}
+
 export function selectNextQuestion(args) {
-  return eligibleQuestions(args)[0] ?? null;
+  const eligible = eligibleQuestions(args);
+  if (!eligible.length) return null;
+
+  const byLevel = new Map();
+  for (const q of eligible) {
+    if (!byLevel.has(q.levelKey)) byLevel.set(q.levelKey, []);
+    byLevel.get(q.levelKey).push(q);
+  }
+
+  // Crucial: weights are based on the original category composition, not on
+  // remaining stock. Spending questions therefore does not progressively
+  // distort the intended level probabilities. Only exhausted levels are
+  // removed and the original weights are renormalized among those left.
+  const weights = baseLevelWeights(args);
+  const levelKey = chooseWeightedLevel([...byLevel.keys()], weights, args.rng ?? Math.random);
+  return byLevel.get(levelKey)?.[0] ?? eligible[0];
 }
 
 export function computeStats(matches, events) {
