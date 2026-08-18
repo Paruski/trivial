@@ -1,42 +1,8 @@
 import { SCHEMA_VERSION } from './domain.js';
 
 const DB_NAME = 'trivial-pages';
-const DB_VERSION = 2;
-
-function openDb() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains('banks')) db.createObjectStore('banks', { keyPath: 'bankId' });
-      if (!db.objectStoreNames.contains('questions')) {
-        const store = db.createObjectStore('questions', { keyPath: 'questionKey' });
-        store.createIndex('bankId', 'bankId');
-      }
-      if (!db.objectStoreNames.contains('players')) db.createObjectStore('players', { keyPath: 'playerId' });
-      if (!db.objectStoreNames.contains('matches')) db.createObjectStore('matches', { keyPath: 'matchId' });
-      if (!db.objectStoreNames.contains('events')) {
-        const store = db.createObjectStore('events', { keyPath: 'eventId' });
-        store.createIndex('matchId', 'matchId');
-      }
-      if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'key' });
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-function txPromise(storeNames, mode, fn) {
-  return openDb().then((db) => new Promise((resolve, reject) => {
-    const tx = db.transaction(storeNames, mode);
-    const stores = Object.fromEntries(storeNames.map((name) => [name, tx.objectStore(name)]));
-    let result;
-    try { result = fn(stores, tx); } catch (err) { reject(err); return; }
-    tx.oncomplete = () => resolve(result);
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error ?? new Error('Transaction aborted'));
-  }));
-}
+const DB_VERSION = 4;
+const DATA_STORES = ['banks','categories','levels','questions','players','matches','participants','attempts','exposures','events'];
 
 function requestPromise(req) {
   return new Promise((resolve, reject) => {
@@ -45,11 +11,74 @@ function requestPromise(req) {
   });
 }
 
+function ensureIndex(store, name, keyPath, options = {}) {
+  if (!store.indexNames.contains(name)) store.createIndex(name, keyPath, options);
+}
+
+function openDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = () => {
+      const database = req.result;
+      const tx = req.transaction;
+      const getStore = (name, keyPath) => database.objectStoreNames.contains(name)
+        ? tx.objectStore(name)
+        : database.createObjectStore(name, { keyPath });
+
+      getStore('banks', 'bankId');
+      getStore('categories', 'categoryId');
+      getStore('levels', 'levelKey');
+      const questions = getStore('questions', 'questionKey');
+      ensureIndex(questions, 'bankId', 'bankId');
+      ensureIndex(questions, 'status', 'status');
+      getStore('players', 'playerId');
+      getStore('matches', 'matchId');
+      const participants = getStore('participants', 'matchPlayerId');
+      ensureIndex(participants, 'matchId', 'matchId');
+      ensureIndex(participants, 'playerId', 'playerId');
+      const attempts = getStore('attempts', 'attemptId');
+      ensureIndex(attempts, 'matchId', 'matchId');
+      ensureIndex(attempts, 'playerId', 'playerId');
+      ensureIndex(attempts, 'questionKey', 'questionKey');
+      ensureIndex(attempts, 'sourceEventId', 'sourceEventId');
+      const exposures = getStore('exposures', 'exposureId');
+      ensureIndex(exposures, 'matchId', 'matchId');
+      ensureIndex(exposures, 'questionKey', 'questionKey');
+      ensureIndex(exposures, 'sourceEventId', 'sourceEventId');
+      const events = getStore('events', 'eventId');
+      ensureIndex(events, 'matchId', 'matchId');
+      getStore('meta', 'key');
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function txPromise(storeNames, mode, fn) {
+  return openDb().then((database) => new Promise((resolve, reject) => {
+    const tx = database.transaction(storeNames, mode);
+    const stores = Object.fromEntries(storeNames.map((name) => [name, tx.objectStore(name)]));
+    let value;
+    try { value = fn(stores, tx); } catch (error) { reject(error); return; }
+    tx.oncomplete = () => resolve(value);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error('Transacción abortada'));
+  }));
+}
+
+async function loadSeed() {
+  const response = await fetch('./data/seed.json', { cache: 'no-store' });
+  if (!response.ok) throw new Error(`No se pudo cargar la base integrada (${response.status})`);
+  return response.json();
+}
+
 export const db = {
   async init() {
     await openDb();
-    const meta = await this.getMeta('schemaVersion');
-    if (!meta) await this.setMeta('schemaVersion', SCHEMA_VERSION);
+    const seed = await loadSeed();
+    await this.ensureSeed(seed);
+    await this.setMeta('schemaVersion', SCHEMA_VERSION);
+    return seed;
   },
 
   async getAll(store) {
@@ -62,59 +91,83 @@ export const db = {
     return requestPromise(database.transaction(store, 'readonly').objectStore(store).get(key));
   },
 
+  async getByIndex(store, indexName, value) {
+    const database = await openDb();
+    return requestPromise(database.transaction(store, 'readonly').objectStore(store).index(indexName).getAll(value));
+  },
+
   async put(store, value) {
     return txPromise([store], 'readwrite', (s) => s[store].put(value));
   },
 
   async putMany(store, values) {
-    return txPromise([store], 'readwrite', (s) => values.forEach((v) => s[store].put(v)));
+    if (!values?.length) return;
+    return txPromise([store], 'readwrite', (s) => values.forEach((value) => s[store].put(value)));
   },
 
-  async delete(store, key) {
-    return txPromise([store], 'readwrite', (s) => s[store].delete(key));
+  async atomicPut(putsByStore) {
+    const storeNames = Object.keys(putsByStore).filter((name) => putsByStore[name]?.length);
+    if (!storeNames.length) return;
+    return txPromise(storeNames, 'readwrite', (stores) => {
+      for (const name of storeNames) for (const value of putsByStore[name]) stores[name].put(value);
+    });
   },
 
   async clear(store) {
     return txPromise([store], 'readwrite', (s) => s[store].clear());
   },
 
-  async eventsForMatch(matchId) {
-    const database = await openDb();
-    const index = database.transaction('events', 'readonly').objectStore('events').index('matchId');
-    return requestPromise(index.getAll(matchId));
+  async eventsForMatch(matchId) { return this.getByIndex('events', 'matchId', matchId); },
+  async attemptsForMatch(matchId) { return this.getByIndex('attempts', 'matchId', matchId); },
+  async participantsForMatch(matchId) { return this.getByIndex('participants', 'matchId', matchId); },
+  async questionsForBank(bankId) { return this.getByIndex('questions', 'bankId', bankId); },
+
+  async getMeta(key) { return (await this.get('meta', key))?.value; },
+  async setMeta(key, value) { return this.put('meta', { key, value }); },
+
+  async putIfMissing(store, key, value) {
+    if (await this.get(store, key)) return false;
+    await this.put(store, value);
+    return true;
   },
 
-  async questionsForBank(bankId) {
-    const database = await openDb();
-    const index = database.transaction('questions', 'readonly').objectStore('questions').index('bankId');
-    return requestPromise(index.getAll(bankId));
+  async ensureSeed(seed) {
+    if (!seed?.seedVersion || !seed?.bank) throw new Error('Base integrada no válida');
+    const applied = await this.getMeta('seedVersion');
+    if (applied === seed.seedVersion) return;
+
+    await this.putIfMissing('banks', seed.bank.bankId, seed.bank);
+    for (const row of seed.bank.categories ?? []) await this.putIfMissing('categories', row.categoryId, row);
+    for (const row of seed.bank.levels ?? []) await this.putIfMissing('levels', row.levelKey, row);
+    for (const row of seed.players ?? []) await this.putIfMissing('players', row.playerId, row);
+    for (const row of seed.questions ?? []) await this.putIfMissing('questions', row.questionKey, row);
+    for (const row of seed.matches ?? []) await this.putIfMissing('matches', row.matchId, row);
+    for (const row of seed.participants ?? []) await this.putIfMissing('participants', row.matchPlayerId, row);
+    for (const row of seed.attempts ?? []) await this.putIfMissing('attempts', row.attemptId, row);
+    for (const row of seed.exposures ?? []) await this.putIfMissing('exposures', row.exposureId, row);
+    await this.setMeta('seedVersion', seed.seedVersion);
   },
 
-  async getMeta(key) {
-    return (await this.get('meta', key))?.value;
-  },
-
-  async setMeta(key, value) {
-    return this.put('meta', { key, value });
+  async resetToSeed() {
+    const seed = await loadSeed();
+    for (const store of DATA_STORES) await this.clear(store);
+    await this.clear('meta');
+    await this.ensureSeed(seed);
+    await this.setMeta('schemaVersion', SCHEMA_VERSION);
+    return seed;
   },
 
   async exportAll() {
-    const [banks, questions, players, matches, events, meta] = await Promise.all([
-      this.getAll('banks'), this.getAll('questions'), this.getAll('players'), this.getAll('matches'), this.getAll('events'), this.getAll('meta')
-    ]);
-    return { schemaVersion: SCHEMA_VERSION, exportedAt: new Date().toISOString(), banks, questions, players, matches, events, meta };
+    const result = { schemaVersion: SCHEMA_VERSION, exportedAt: new Date().toISOString() };
+    for (const store of [...DATA_STORES, 'meta']) result[store] = await this.getAll(store);
+    return result;
   },
 
   async importAll(payload, { replace = false } = {}) {
-    if (!payload || !Array.isArray(payload.matches) || !Array.isArray(payload.events)) throw new Error('Copia no válida');
-    if (replace) {
-      for (const store of ['banks', 'questions', 'players', 'matches', 'events', 'meta']) await this.clear(store);
-    }
-    await this.putMany('banks', payload.banks ?? []);
-    await this.putMany('questions', payload.questions ?? []);
-    await this.putMany('players', payload.players ?? []);
-    await this.putMany('matches', payload.matches ?? []);
-    await this.putMany('events', payload.events ?? []);
+    if (!payload || !Array.isArray(payload.matches) || !Array.isArray(payload.attempts)) throw new Error('Copia no válida');
+    if (replace) for (const store of [...DATA_STORES, 'meta']) await this.clear(store);
+    for (const store of DATA_STORES) if (Array.isArray(payload[store])) await this.putMany(store, payload[store]);
+    if (Array.isArray(payload.meta)) await this.putMany('meta', payload.meta);
     await this.setMeta('schemaVersion', payload.schemaVersion ?? SCHEMA_VERSION);
-  }
+  },
 };
