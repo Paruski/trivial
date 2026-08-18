@@ -1,28 +1,43 @@
 # Trivial
 
-Aplicación estática autosuficiente para GitHub Pages. Permite jugar con J1, J2 y J3 en cualquier combinación de 1 a 3 participantes, escogiendo categorías y niveles por partida.
+Aplicación estática, autosuficiente y offline para GitHub Pages. No usa backend, APIs, hojas externas ni modelos durante el juego. Los CSV del repositorio son la única semilla canónica; IndexedDB conserva en cada navegador las partidas nuevas como un ledger append-only.
 
-## Datos canónicos
+## Jugar
 
-La semilla está en `data/` y usa CSV UTF-8 **sin BOM**, separador coma, comillas dobles y finales de línea CRLF (dialecto RFC 4180). Las cabeceras son ASCII estables. No hay una segunda semilla JSON.
+La versión publicada vive en `https://paruski.github.io/trivial/`. Una partida admite entre uno y tres jugadores disponibles y cualquier subconjunto no vacío de categorías y niveles que tenga stock. En cada turno se eligen explícitamente jugador, categoría y si se intenta quesito; el motor elige el nivel y la pregunta.
 
-- `players.csv`: jugadores.
-- `categories.csv`: categorías.
-- `levels.csv`: niveles.
-- `questions-*.csv`: banco de preguntas por categoría.
-- `matches.csv`, `participants.csv`, `attempts-*.csv`: histórico inicial ya consolidado.
-- `exposures.csv`: exposiciones operativas; la semilla inicial limpia no conserva descartes históricos.
-- `events.csv`: ledger inicial de eventos web.
-- `meta.csv`: versión y metadatos de semilla.
+## Desarrollo
 
-Los CSV canónicos representan únicamente el **estado final aceptado**. Las rectificaciones ya incorporadas no se conservan como anotaciones de corrección y las preguntas retiradas de la semilla no permanecen como filas `discarded`. Durante una partida sí pueden existir eventos operativos de descarte, deshacer y rehacer en IndexedDB para garantizar consistencia; una futura consolidación de la semilla puede compactarlos de nuevo al estado final.
+Requisitos: Node.js 22 o posterior.
 
-Al abrir la web, estos CSV se cargan automáticamente en IndexedDB. Cuando cambia `seed_version`, la base local se reconcilia con la nueva semilla de forma determinista: actualiza el histórico canónico y elimina de las tablas históricas los registros que ya no pertenecen a la semilla, sin borrar partidas locales nuevas. `Restaurar base original` vuelve exactamente a la semilla del repositorio.
+```sh
+npm ci
+npm test
+npx playwright install chromium
+npm run test:e2e
+```
 
-## Selección de preguntas
+Para servirla localmente:
 
-La configuración de cada partida congela jugadores, categorías, niveles, semilla y pesos de nivel. El nivel de cada turno se selecciona con un PRNG determinista. Los pesos proceden de la composición original de la categoría y no disminuyen al consumirse preguntas; un nivel solo se elimina de la distribución cuando ya no tiene stock activo. Dentro del nivel elegido se sirve la siguiente pregunta por `random_order`.
+```sh
+python3 -m http.server 4173 --bind 127.0.0.1
+```
 
-## Desarrollo y despliegue
+## Especificación
 
-No hay backend ni dependencia de LLM. GitHub Actions ejecuta `node --test tests/*.mjs` y, si las pruebas pasan, publica la aplicación en GitHub Pages.
+- [Arquitectura](docs/ARCHITECTURE.md)
+- [Reglas y protocolo de juego](docs/RULES.md)
+- [Modelo de datos, CSV y migraciones](docs/DATA_MODEL.md)
+- [Creación y validación de preguntas](docs/QUESTIONS.md)
+- [PRNG y selección](docs/PRNG.md)
+- [Estadísticas](docs/STATISTICS.md)
+- [Undo/redo, recuperación, copias y diagnóstico](docs/OPERATIONS.md)
+- [Pruebas y CI/CD](docs/TESTING.md)
+
+## Versiones canónicas
+
+- `schema_version`: `6`
+- `rules_version`: `trivial-rules-2.0.0`
+- `seed_version`: `2026-08-19.3`
+
+Estas versiones también están en `src/config.js` y `data/meta.csv`. GitHub Actions solo despliega Pages después de validar la semilla, superar las pruebas unitarias y completar el E2E en Chromium.

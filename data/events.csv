@@ -1,1 +1,1 @@
-"event_id","match_id","seq","type","ts","payload_json"
+"event_id","match_id","seq","timestamp","type","schema_version","action_id","idempotency_key","payload_json"

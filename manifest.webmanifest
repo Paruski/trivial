@@ -5,5 +5,13 @@
   "display": "standalone",
   "background_color": "#0b1020",
   "theme_color": "#111827",
-  "description": "Partidas de Trivial locales, reversibles y sin backend."
+  "description": "Partidas de Trivial locales, reversibles y sin backend.",
+  "icons": [
+    {
+      "src": "icons/trivial.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
 }

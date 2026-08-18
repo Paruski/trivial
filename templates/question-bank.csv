@@ -1,2 +1,2 @@
-ID,Categoría,Dificultad,Pregunta,Respuesta,Explicación breve,Estado,Orden aleatorio
-EX-001,Ejemplo,curricular,¿Pregunta de ejemplo?,Respuesta de ejemplo.,Explicación opcional.,no administrada,1
+"bank_id","question_id","question_key","category_id","level_key","prompt","answer","explanation","status","source_status","random_order","order_key"
+"B_EXAMPLE","EX-001","B_EXAMPLE|EX-001","EX","S_EXAMPLE|CUR","¿Pregunta de ejemplo?","Respuesta breve y verificable.","Explicación breve.","active","new","1","B_EXAMPLE|000001|EX-001"

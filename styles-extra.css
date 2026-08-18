@@ -6,3 +6,8 @@
 .stock-zero { opacity: .45; }
 .status-line { display:flex; gap:.45rem; flex-wrap:wrap; margin:.6rem 0 1rem; }
 hr { border: 0; border-top: 1px solid var(--line); margin: 1rem 0; }
+.mono { white-space: pre-line; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .82rem; }
+.full-width { width: 100%; margin-top: .6rem; }
+.good-notice { border-color: #2c6647; color: #baf4d1; }
+body.busy { cursor: progress; }
+body.busy button { pointer-events: none; }

@@ -1,11 +1,42 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { parseCsv, rowsToObjects } from '../src/csv.js';
-const root=new URL('../data/',import.meta.url);const qFiles=['AL','LI','FI','HI','IN','NE'].map(id=>`questions-${id}.csv`);const aFiles=['J1','J2','J3'].map(id=>`attempts-${id}.csv`);const files=['meta.csv','banks.csv','categories.csv','levels.csv',...qFiles,'players.csv','matches.csv','participants.csv',...aFiles,'exposures.csv','events.csv'];
-const readRows=name=>rowsToObjects(parseCsv(fs.readFileSync(fileURLToPath(new URL(name,root)),'utf8')));
-test('todos los CSV son UTF-8 sin BOM y usan CRLF',()=>{for(const name of files){const p=fileURLToPath(new URL(name,root));const bytes=fs.readFileSync(p);assert.notDeepEqual([...bytes.subarray(0,3)],[0xef,0xbb,0xbf],`${name} no debe tener BOM`);assert.ok(bytes.includes(Buffer.from('\r\n')),`${name} debe usar CRLF`);new TextDecoder('utf-8',{fatal:true}).decode(bytes)}});
-test('el banco canónico limpio contiene 126 preguntas y claves únicas',()=>{const rows=qFiles.flatMap(readRows);assert.equal(rows.length,126);assert.equal(new Set(rows.map(r=>r.question_key)).size,126);assert.equal(rows.some(r=>r.status==='discarded'),false)});
-test('la semilla histórica no conserva exposiciones descartadas',()=>{assert.equal(readRows('exposures.csv').length,0)});
-test('el histórico contiene solo el estado final aceptado',()=>{const rows=aFiles.flatMap(readRows);assert.equal(rows.some(r=>/correcci[oó]n|rectific|no era pregunta/i.test(r.notes??'')),false);const j2Quesitos=rows.filter(r=>r.player_id==='J2'&&r.quesito_won==='true').length;assert.equal(j2Quesitos,1)});
+import path from 'node:path';
+import { decodeCsvBytes, parseCsv, rowsToObjects } from '../src/csv.js';
+import { SEED_FILES } from '../src/config.js';
+import { loadSeed, validateSeed } from '../src/seed.js';
+import { installFileFetch, root } from './helpers.mjs';
+
+installFileFetch();
+
+test('todos los CSV canónicos son UTF-8 sin BOM, CRLF y RFC 4180 estructural', () => {
+  for (const relative of Object.values(SEED_FILES).flat()) {
+    const bytes = fs.readFileSync(path.join(root, relative));
+    const rows = parseCsv(decodeCsvBytes(bytes, relative));
+    assert.ok(rows.length >= 1, relative);
+    rowsToObjects(rows);
+  }
+});
+
+test('el parser rechaza BOM, LF suelto, cabeceras inestables y filas rotas', () => {
+  assert.throws(() => decodeCsvBytes(Buffer.from('\ufeff"a"\r\n"b"\r\n')), /BOM/);
+  assert.throws(() => decodeCsvBytes(Buffer.from('"a"\n"b"\n')), /CRLF/);
+  assert.throws(() => rowsToObjects(parseCsv('"Á"\r\n"x"\r\n')), /cabeceras/);
+  assert.throws(() => rowsToObjects(parseCsv('"a","b"\r\n"x"\r\n')), /campos/);
+});
+
+test('la semilla canónica completa pasa IDs, FKs, duplicados, obligatorios y conteos', async () => {
+  const seed = await loadSeed();
+  const result = validateSeed(seed);
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  assert.equal(result.counts.questions, 126);
+  assert.equal(new Set(seed.questions.map((question) => question.questionKey)).size, 126);
+  assert.equal(seed.questions.some((question) => question.status === 'discarded'), false);
+  assert.equal(seed.questions.every((question) => question.questionKey === `${question.bankId}|${question.questionId}` && question.orderKey), true);
+});
+
+test('la semilla limpia no conserva descartes ni notas de rectificación resuelta', async () => {
+  const seed = await loadSeed();
+  assert.equal(seed.exposures.length, 0);
+  assert.equal(seed.attempts.some((attempt) => /correcci[oó]n|rectific|no era pregunta/i.test(attempt.notes ?? '')), false);
+});

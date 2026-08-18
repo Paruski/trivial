@@ -1,3 +1,5 @@
-*.json
-!manifest.webmanifest
+node_modules/
+playwright-report/
+test-results/
+*.backup.json
 .DS_Store

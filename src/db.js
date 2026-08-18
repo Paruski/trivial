@@ -1,123 +1,237 @@
-import { SCHEMA_VERSION } from './domain.js';
-import { fetchCsv, csvBool, csvNullableBool, csvInt, csvList } from './csv.js';
+import { DATA_STORES, EVENT_SCHEMA_VERSION, SCHEMA_VERSION } from './config.js';
+import { makeEvent } from './domain.js';
+import { loadSeed } from './seed.js';
 
 const DB_NAME = 'trivial-pages';
-const DB_VERSION = 5;
-const DATA_STORES = ['banks','categories','levels','questions','players','matches','participants','attempts','exposures','events'];
-const CSV_FILES = Object.freeze({
-  meta: './data/meta.csv', banks: './data/banks.csv', categories: './data/categories.csv', levels: './data/levels.csv',
-  players: './data/players.csv', matches: './data/matches.csv', participants: './data/participants.csv',
-  exposures: './data/exposures.csv', events: './data/events.csv',
-});
-const QUESTION_FILES = ['AL','LI','FI','HI','IN','NE'].map((id) => `./data/questions-${id}.csv`);
-const ATTEMPT_FILES = ['J1','J2','J3'].map((id) => `./data/attempts-${id}.csv`);
+const DB_VERSION = 7;
+const META_STORE = 'meta';
+const ALL_STORES = [...DATA_STORES, META_STORE];
+const localQueues = new Map();
+const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('trivial-pages-sync-v1') : null;
 
-function requestPromise(req) {
+function requestPromise(request) {
   return new Promise((resolve, reject) => {
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
   });
 }
-function ensureIndex(store, name, keyPath, options = {}) { if (!store.indexNames.contains(name)) store.createIndex(name, keyPath, options); }
-function openDb() {
+
+function transactionPromise(transaction, value = undefined) {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
-      const database = req.result, tx = req.transaction;
-      const getStore = (name, keyPath) => database.objectStoreNames.contains(name) ? tx.objectStore(name) : database.createObjectStore(name, { keyPath });
-      getStore('banks', 'bankId'); getStore('categories', 'categoryId'); getStore('levels', 'levelKey');
-      const questions = getStore('questions', 'questionKey'); ensureIndex(questions, 'bankId', 'bankId'); ensureIndex(questions, 'status', 'status');
-      getStore('players', 'playerId'); getStore('matches', 'matchId');
-      const participants = getStore('participants', 'matchPlayerId'); ensureIndex(participants, 'matchId', 'matchId'); ensureIndex(participants, 'playerId', 'playerId');
-      const attempts = getStore('attempts', 'attemptId'); ensureIndex(attempts, 'matchId', 'matchId'); ensureIndex(attempts, 'playerId', 'playerId'); ensureIndex(attempts, 'questionKey', 'questionKey'); ensureIndex(attempts, 'sourceEventId', 'sourceEventId');
-      const exposures = getStore('exposures', 'exposureId'); ensureIndex(exposures, 'matchId', 'matchId'); ensureIndex(exposures, 'questionKey', 'questionKey'); ensureIndex(exposures, 'sourceEventId', 'sourceEventId');
-      const events = getStore('events', 'eventId'); ensureIndex(events, 'matchId', 'matchId'); getStore('meta', 'key');
+    transaction.oncomplete = () => resolve(value);
+    transaction.onerror = () => reject(transaction.error ?? new Error('Error de transacción'));
+    transaction.onabort = () => reject(transaction.error ?? new Error('Transacción abortada'));
+  });
+}
+
+function ensureIndex(store, name, keyPath, options = {}) {
+  if (!store.indexNames.contains(name)) store.createIndex(name, keyPath, options);
+}
+
+function createStores(database, transaction) {
+  const ensureStore = (name, keyPath) => database.objectStoreNames.contains(name) ? transaction.objectStore(name) : database.createObjectStore(name, { keyPath });
+  const banks = ensureStore('banks', 'bankId'); ensureIndex(banks, 'seedOwned', 'seedOwned');
+  if (database.objectStoreNames.contains('categories') && transaction.objectStore('categories').keyPath !== 'categoryKey') database.deleteObjectStore('categories');
+  const categories = ensureStore('categories', 'categoryKey'); ensureIndex(categories, 'bankId', 'bankId');
+  ensureStore('levels', 'levelKey');
+  const questions = ensureStore('questions', 'questionKey'); ensureIndex(questions, 'bankId', 'bankId'); ensureIndex(questions, 'status', 'status');
+  ensureStore('players', 'playerId');
+  const matches = ensureStore('matches', 'matchId'); ensureIndex(matches, 'bankId', 'bankId'); ensureIndex(matches, 'source', 'source');
+  const participants = ensureStore('participants', 'matchPlayerId'); ensureIndex(participants, 'matchId', 'matchId'); ensureIndex(participants, 'playerId', 'playerId');
+  const attempts = ensureStore('attempts', 'attemptId'); ensureIndex(attempts, 'matchId', 'matchId'); ensureIndex(attempts, 'playerId', 'playerId'); ensureIndex(attempts, 'questionKey', 'questionKey'); ensureIndex(attempts, 'sourceEventId', 'sourceEventId');
+  const exposures = ensureStore('exposures', 'exposureId'); ensureIndex(exposures, 'matchId', 'matchId'); ensureIndex(exposures, 'questionKey', 'questionKey'); ensureIndex(exposures, 'sourceEventId', 'sourceEventId');
+  const events = ensureStore('events', 'eventId'); ensureIndex(events, 'matchId', 'matchId'); ensureIndex(events, 'matchSeq', ['matchId', 'seq'], { unique: true }); ensureIndex(events, 'idempotencyKey', 'idempotencyKey', { unique: true });
+  ensureStore(META_STORE, 'key');
+  if (transaction.objectStoreNames.contains('events')) {
+    const cursorRequest = transaction.objectStore('events').openCursor();
+    cursorRequest.onsuccess = () => {
+      const cursor = cursorRequest.result;
+      if (!cursor) return;
+      const event = cursor.value;
+      let changed = false;
+      if (!event.timestamp && event.ts) { event.timestamp = event.ts; delete event.ts; changed = true; }
+      if (!event.schemaVersion) { event.schemaVersion = EVENT_SCHEMA_VERSION; changed = true; }
+      if (changed) cursor.update(event);
+      cursor.continue();
     };
-    req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error);
+  }
+}
+
+export function openDatabase() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = () => createStores(request.result, request.transaction);
+    request.onsuccess = () => {
+      request.result.onversionchange = () => request.result.close();
+      resolve(request.result);
+    };
+    request.onerror = () => reject(request.error);
+    request.onblocked = () => reject(new Error('Otra pestaña bloquea la migración. Ciérrala y recarga.'));
   });
 }
-function txPromise(storeNames, mode, fn) {
-  return openDb().then((database) => new Promise((resolve, reject) => {
-    const tx = database.transaction(storeNames, mode), stores = Object.fromEntries(storeNames.map((name) => [name, tx.objectStore(name)]));
-    let value; try { value = fn(stores, tx); } catch (error) { reject(error); return; }
-    tx.oncomplete = () => resolve(value); tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error ?? new Error('Transacción abortada'));
-  }));
+
+async function localLock(name, task) {
+  const previous = localQueues.get(name) ?? Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => { release = resolve; });
+  const queued = previous.then(() => current);
+  localQueues.set(name, queued);
+  await previous;
+  try { return await task(); }
+  finally { release(); if (localQueues.get(name) === queued) localQueues.delete(name); }
 }
-function mapSeed(raw) {
-  const metaMap = Object.fromEntries(raw.meta.map((r) => [r.key, r.value]));
-  const banks = raw.banks.map((r) => ({ bankId:r.bank_id, name:r.name, seedVersion:r.seed_version, questionCount:csvInt(r.question_count), levelWeightsPolicy:r.level_weights_policy }));
-  const categories = raw.categories.map((r) => ({ categoryId:r.category_id, label:r.label, color:r.color, emoji:r.emoji, active:csvBool(r.active,true), quesitoDefault:csvBool(r.quesito_default,true) }));
-  const levels = raw.levels.map((r) => ({ levelKey:r.level_key, scaleId:r.scale_id, levelIdLocal:r.level_id_local, label:r.label, order:csvInt(r.order), description:r.description }));
-  for (const bank of banks) { bank.categories = categories; bank.levels = levels; }
-  const questions = raw.questions.map((r) => ({ questionKey:r.question_key, bankId:r.bank_id, questionId:r.question_id, categoryId:r.category_id, levelKey:r.level_key, prompt:r.prompt, answer:r.answer, explanation:r.explanation, status:r.status, sourceStatus:r.source_status, randomOrder:csvInt(r.random_order, Number.MAX_SAFE_INTEGER) }));
-  const players = raw.players.map((r) => ({ playerId:r.player_id, name:r.name, active:csvBool(r.active,true) }));
-  const matches = raw.matches.map((r) => ({ matchId:r.match_id, name:r.name, bankId:r.bank_id, playerIds:csvList(r.player_ids), enabledCategoryIds:csvList(r.enabled_category_ids), enabledLevelKeys:csvList(r.enabled_level_keys), status:r.status, createdAt:r.created_at || null, closedAt:r.closed_at || null, closeReason:r.close_reason || null, seed:r.seed, source:r.source }));
-  const participants = raw.participants.map((r) => ({ matchPlayerId:r.match_player_id, matchId:r.match_id, playerId:r.player_id, seatNo:csvInt(r.seat_no), active:csvBool(r.active,true) }));
-  const attempts = raw.attempts.map((r) => ({ attemptId:r.attempt_id, matchId:r.match_id, questionNo:csvInt(r.question_no), playerId:r.player_id, questionId:r.question_id, questionKey:r.question_key, bankId:r.bank_id, categoryId:r.category_id, levelKey:r.level_key, resultId:r.result_id, computable:csvBool(r.computable,true), correct:csvNullableBool(r.correct), quesitoAttempt:csvBool(r.quesito_attempt), quesitoWon:csvBool(r.quesito_won), notes:r.notes, active:csvBool(r.active,true), source:r.source, sourceEventId:r.source_event_id || null }));
-  const exposures = raw.exposures.map((r) => ({ exposureId:r.exposure_id, matchId:r.match_id || null, bankId:r.bank_id || null, questionKey:r.question_key || null, questionId:r.question_id || null, playerId:r.player_id || null, questionNoRel:r.question_no ? csvInt(r.question_no) : null, type:r.type, countsAsAttempt:csvBool(r.counts_as_attempt), reason:r.reason, source:r.source, active:csvBool(r.active,true), sourceEventId:r.source_event_id || null }));
-  const events = raw.events.map((r) => ({ eventId:r.event_id, matchId:r.match_id, seq:csvInt(r.seq), type:r.type, ts:r.ts, payload:r.payload_json ? JSON.parse(r.payload_json) : {} }));
-  const bank = banks.find((b) => b.bankId === metaMap.canonical_bank_id) ?? banks[0];
-  if (!bank) throw new Error('No hay banco canónico en los CSV integrados');
-  if (bank.questionCount !== questions.filter((q) => q.bankId === bank.bankId).length) throw new Error('Conteo de preguntas incoherente en los CSV integrados');
-  return { seedVersion:metaMap.seed_version, bank, banks, categories, levels, questions, players, matches, participants, attempts, exposures, events, meta:raw.meta };
+
+export async function withWriteLock(name, task) {
+  if (globalThis.navigator?.locks?.request) return navigator.locks.request(`trivial:${name}`, { mode: 'exclusive' }, task);
+  return localLock(name, task);
 }
-async function loadSeed() {
-  const names = Object.keys(CSV_FILES);
-  const [tables, questionParts, attemptParts] = await Promise.all([Promise.all(names.map((name) => fetchCsv(CSV_FILES[name]))), Promise.all(QUESTION_FILES.map(fetchCsv)), Promise.all(ATTEMPT_FILES.map(fetchCsv))]);
-  const raw = Object.fromEntries(names.map((name, index) => [name, tables[index]])); raw.questions = questionParts.flat(); raw.attempts = attemptParts.flat(); return mapSeed(raw);
+
+async function readAll(storeName) {
+  const database = await openDatabase();
+  const transaction = database.transaction(storeName, 'readonly');
+  return requestPromise(transaction.objectStore(storeName).getAll());
 }
-export const db = {
-  async init() { await openDb(); const seed = await loadSeed(); await this.ensureSeed(seed); await this.setMeta('schemaVersion', SCHEMA_VERSION); return seed; },
-  async getAll(store) { const database = await openDb(); return requestPromise(database.transaction(store, 'readonly').objectStore(store).getAll()); },
-  async get(store, key) { const database = await openDb(); return requestPromise(database.transaction(store, 'readonly').objectStore(store).get(key)); },
-  async getByIndex(store, indexName, value) { const database = await openDb(); return requestPromise(database.transaction(store, 'readonly').objectStore(store).index(indexName).getAll(value)); },
-  async put(store, value) { return txPromise([store], 'readwrite', (s) => s[store].put(value)); },
-  async putMany(store, values) { if (!values?.length) return; return txPromise([store], 'readwrite', (s) => values.forEach((value) => s[store].put(value))); },
-  async atomicPut(putsByStore) { const storeNames = Object.keys(putsByStore).filter((name) => putsByStore[name]?.length); if (!storeNames.length) return; return txPromise(storeNames, 'readwrite', (stores) => { for (const name of storeNames) for (const value of putsByStore[name]) stores[name].put(value); }); },
-  async clear(store) { return txPromise([store], 'readwrite', (s) => s[store].clear()); },
-  async eventsForMatch(matchId) { return this.getByIndex('events', 'matchId', matchId); }, async attemptsForMatch(matchId) { return this.getByIndex('attempts', 'matchId', matchId); }, async participantsForMatch(matchId) { return this.getByIndex('participants', 'matchId', matchId); }, async questionsForBank(bankId) { return this.getByIndex('questions', 'bankId', bankId); },
-  async getMeta(key) { return (await this.get('meta', key))?.value; }, async setMeta(key, value) { return this.put('meta', { key, value }); },
-  async putIfMissing(store, key, value) { if (await this.get(store, key)) return false; await this.put(store, value); return true; },
-  async reconcileCanonicalSeed(seed) {
+
+async function getByIndex(storeName, indexName, value) {
+  const database = await openDatabase();
+  const transaction = database.transaction(storeName, 'readonly');
+  return requestPromise(transaction.objectStore(storeName).index(indexName).getAll(value));
+}
+
+function clearAndPutSeed(transaction, seed) {
+  for (const storeName of DATA_STORES) transaction.objectStore(storeName).clear();
+  transaction.objectStore(META_STORE).clear();
+  for (const storeName of DATA_STORES) for (const row of seed[storeName] ?? []) transaction.objectStore(storeName).put(row);
+  const meta = transaction.objectStore(META_STORE);
+  for (const row of seed.meta) meta.put(row);
+  meta.put({ key: 'seedVersion', value: seed.seedVersion });
+  meta.put({ key: 'schemaVersion', value: SCHEMA_VERSION });
+  meta.put({ key: 'lastIntegrityCheck', value: new Date().toISOString() });
+}
+
+async function reconcileSeed(seed) {
+  return withWriteLock('seed', async () => {
+    const database = await openDatabase();
+    const current = await requestPromise(database.transaction(META_STORE, 'readonly').objectStore(META_STORE).get('seedVersion'));
+    if (current?.value === seed.seedVersion) return;
+    const existing = Object.fromEntries(await Promise.all(DATA_STORES.map(async (storeName) => [storeName, await readAll(storeName)])));
+    const transaction = database.transaction(ALL_STORES, 'readwrite');
     const bankIds = new Set(seed.banks.map((row) => row.bankId));
-    const questionKeys = new Set(seed.questions.map((row) => row.questionKey));
-    const historicalMatchIds = new Set(seed.matches.filter((row) => row.source === 'historical_seed').map((row) => row.matchId));
-    const attemptIds = new Set(seed.attempts.filter((row) => historicalMatchIds.has(row.matchId)).map((row) => row.attemptId));
-    const exposureIds = new Set(seed.exposures.filter((row) => historicalMatchIds.has(row.matchId)).map((row) => row.exposureId));
-    await txPromise(['banks','questions','matches','participants','attempts','exposures'], 'readwrite', (stores) => {
-      const qCursor = stores.questions.openCursor();
-      qCursor.onsuccess = () => {
-        const cursor = qCursor.result; if (!cursor) return;
-        if (bankIds.has(cursor.value.bankId) && !questionKeys.has(cursor.value.questionKey)) cursor.delete();
-        cursor.continue();
-      };
-      const aCursor = stores.attempts.openCursor();
-      aCursor.onsuccess = () => {
-        const cursor = aCursor.result; if (!cursor) return;
-        if (historicalMatchIds.has(cursor.value.matchId) && !attemptIds.has(cursor.value.attemptId)) cursor.delete();
-        cursor.continue();
-      };
-      const eCursor = stores.exposures.openCursor();
-      eCursor.onsuccess = () => {
-        const cursor = eCursor.result; if (!cursor) return;
-        if (historicalMatchIds.has(cursor.value.matchId) && !cursor.value.sourceEventId && !exposureIds.has(cursor.value.exposureId)) cursor.delete();
-        cursor.continue();
-      };
-      for (const row of seed.banks) stores.banks.put(row);
-      for (const row of seed.matches.filter((r) => historicalMatchIds.has(r.matchId))) stores.matches.put(row);
-      for (const row of seed.participants.filter((r) => historicalMatchIds.has(r.matchId))) stores.participants.put(row);
-      for (const row of seed.attempts.filter((r) => historicalMatchIds.has(r.matchId))) stores.attempts.put(row);
-      for (const row of seed.exposures.filter((r) => historicalMatchIds.has(r.matchId))) stores.exposures.put(row);
+    const primaryKeys = { banks: 'bankId', categories: 'categoryKey', levels: 'levelKey', questions: 'questionKey', players: 'playerId', matches: 'matchId', participants: 'matchPlayerId', attempts: 'attemptId', exposures: 'exposureId', events: 'eventId' };
+    const replaceSeedRows = (storeName, shouldDelete) => {
+      const store = transaction.objectStore(storeName);
+      for (const row of existing[storeName].filter(shouldDelete)) store.delete(row[primaryKeys[storeName]]);
+      for (const row of seed[storeName] ?? []) store.put(row);
+    };
+    replaceSeedRows('banks', (row) => row.seedOwned === true || bankIds.has(row.bankId));
+    replaceSeedRows('categories', (row) => row.seedOwned === true || bankIds.has(row.bankId));
+    replaceSeedRows('levels', (row) => row.seedOwned === true);
+    replaceSeedRows('questions', (row) => row.seedOwned === true || bankIds.has(row.bankId));
+    replaceSeedRows('players', (row) => row.seedOwned === true);
+    replaceSeedRows('matches', (row) => row.seedOwned === true || row.source === 'historical_seed');
+    const historicalMatchIds = new Set(seed.matches.map((row) => row.matchId));
+    replaceSeedRows('participants', (row) => row.seedOwned === true || historicalMatchIds.has(row.matchId));
+    replaceSeedRows('attempts', (row) => row.seedOwned === true || row.source === 'historical_seed');
+    replaceSeedRows('exposures', (row) => row.seedOwned === true || row.source === 'historical_seed');
+    replaceSeedRows('events', (row) => row.seedOwned === true);
+    const meta = transaction.objectStore(META_STORE);
+    for (const row of seed.meta) meta.put(row);
+    meta.put({ key: 'seedVersion', value: seed.seedVersion });
+    meta.put({ key: 'schemaVersion', value: SCHEMA_VERSION });
+    await transactionPromise(transaction);
+    channel?.postMessage({ type: 'seed-updated', seedVersion: seed.seedVersion });
+  });
+}
+
+function appendInTransaction(transaction, matchId, specifications) {
+  const eventStore = transaction.objectStore('events');
+  const index = eventStore.index('matchId');
+  const request = index.getAll(matchId);
+  return new Promise((resolve, reject) => {
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      try {
+        const existing = request.result;
+        const specs = typeof specifications === 'function' ? specifications(existing) : specifications;
+        if (!Array.isArray(specs) || !specs.length) { resolve([]); return; }
+        const duplicate = specs.find((spec) => spec.idempotencyKey && existing.some((event) => event.idempotencyKey === spec.idempotencyKey));
+        if (duplicate) { resolve(existing.filter((event) => event.idempotencyKey === duplicate.idempotencyKey)); return; }
+        let seq = Math.max(0, ...existing.map((event) => Number(event.seq) || 0));
+        const committed = specs.map((spec) => makeEvent({ matchId, seq: ++seq, ...spec }));
+        for (const event of committed) eventStore.add(event);
+        resolve(committed);
+      } catch (error) { transaction.abort(); reject(error); }
+    };
+  });
+}
+
+export const db = {
+  onChange(listener) {
+    if (!channel) return () => {};
+    const handler = (event) => listener(event.data);
+    channel.addEventListener('message', handler);
+    return () => channel.removeEventListener('message', handler);
+  },
+  async init() {
+    await openDatabase();
+    const seed = await loadSeed();
+    await reconcileSeed(seed);
+    return seed;
+  },
+  getAll: readAll,
+  getByIndex,
+  async get(storeName, key) {
+    const database = await openDatabase();
+    return requestPromise(database.transaction(storeName, 'readonly').objectStore(storeName).get(key));
+  },
+  eventsForMatch(matchId) { return getByIndex('events', 'matchId', matchId); },
+  async snapshot() {
+    const result = {};
+    for (const storeName of ALL_STORES) result[storeName] = await readAll(storeName);
+    return result;
+  },
+  async createMatch(match, participants, createdSpec) {
+    return withWriteLock(`match:${match.matchId}`, async () => {
+      const database = await openDatabase();
+      const transaction = database.transaction(['matches', 'participants', 'events'], 'readwrite');
+      transaction.objectStore('matches').add(match);
+      for (const participant of participants) transaction.objectStore('participants').add(participant);
+      const events = await appendInTransaction(transaction, match.matchId, [createdSpec]);
+      await transactionPromise(transaction);
+      channel?.postMessage({ type: 'match-created', matchId: match.matchId });
+      return events;
     });
   },
-  async ensureSeed(seed) {
-    if (!seed?.seedVersion || !seed?.bank) throw new Error('Base integrada no válida');
-    const applied = await this.getMeta('seedVersion'); if (applied === seed.seedVersion) return;
-    await this.reconcileCanonicalSeed(seed);
-    for (const row of seed.banks) await this.put('banks', row); for (const row of seed.categories) await this.putIfMissing('categories', row.categoryId, row); for (const row of seed.levels) await this.putIfMissing('levels', row.levelKey, row); for (const row of seed.players) await this.putIfMissing('players', row.playerId, row); for (const row of seed.questions) await this.putIfMissing('questions', row.questionKey, row); for (const row of seed.matches) await this.putIfMissing('matches', row.matchId, row); for (const row of seed.participants) await this.putIfMissing('participants', row.matchPlayerId, row); for (const row of seed.attempts) await this.putIfMissing('attempts', row.attemptId, row); for (const row of seed.exposures) await this.putIfMissing('exposures', row.exposureId, row); for (const row of seed.events) await this.putIfMissing('events', row.eventId, row);
-    await this.setMeta('seedVersion', seed.seedVersion); await this.setMeta('csvEncoding', 'UTF-8'); await this.setMeta('csvDialect', 'RFC4180-comma-CRLF-doublequote');
+  async commitMatch(matchId, specifications) {
+    return withWriteLock(`match:${matchId}`, async () => {
+      const database = await openDatabase();
+      const transaction = database.transaction('events', 'readwrite');
+      const events = await appendInTransaction(transaction, matchId, specifications);
+      await transactionPromise(transaction);
+      channel?.postMessage({ type: 'events-appended', matchId });
+      return events;
+    });
   },
-  async resetToSeed() { const seed = await loadSeed(); for (const store of DATA_STORES) await this.clear(store); await this.clear('meta'); await this.ensureSeed(seed); await this.setMeta('schemaVersion', SCHEMA_VERSION); return seed; },
-  async exportAll() { const result = { schemaVersion: SCHEMA_VERSION, exportedAt: new Date().toISOString() }; for (const store of [...DATA_STORES, 'meta']) result[store] = await this.getAll(store); return result; },
-  async importAll(payload, { replace = false } = {}) { if (!payload || !Array.isArray(payload.matches) || !Array.isArray(payload.attempts)) throw new Error('Copia no válida'); if (replace) for (const store of [...DATA_STORES, 'meta']) await this.clear(store); for (const store of DATA_STORES) if (Array.isArray(payload[store])) await this.putMany(store, payload[store]); if (Array.isArray(payload.meta)) await this.putMany('meta', payload.meta); await this.setMeta('schemaVersion', payload.schemaVersion ?? SCHEMA_VERSION); },
+  async resetToSeed() {
+    const seed = await loadSeed();
+    return withWriteLock('database', async () => {
+      const database = await openDatabase();
+      const transaction = database.transaction(ALL_STORES, 'readwrite');
+      clearAndPutSeed(transaction, seed);
+      await transactionPromise(transaction);
+      channel?.postMessage({ type: 'database-reset' });
+      return seed;
+    });
+  },
+  async replaceAll(payload) {
+    return withWriteLock('database', async () => {
+      const database = await openDatabase();
+      const transaction = database.transaction(ALL_STORES, 'readwrite');
+      for (const storeName of ALL_STORES) transaction.objectStore(storeName).clear();
+      for (const storeName of DATA_STORES) for (const row of payload[storeName]) transaction.objectStore(storeName).add(row);
+      for (const row of payload.meta) transaction.objectStore(META_STORE).put(row);
+      await transactionPromise(transaction);
+      channel?.postMessage({ type: 'backup-restored' });
+    });
+  },
 };

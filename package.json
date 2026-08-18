@@ -1,0 +1,16 @@
+{
+  "name": "trivial-static",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "validate:data": "node scripts/validate-data.mjs",
+    "test:unit": "node --test tests/*.test.mjs",
+    "test:e2e": "playwright test",
+    "test": "npm run validate:data && npm run test:unit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "fake-indexeddb": "^6.2.4"
+  }
+}

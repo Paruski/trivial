@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#111827" />
-  <meta name="description" content="Trivial autosuficiente para J1, J2 y J3, con banco integrado, histórico y estadísticas." />
+  <meta name="description" content="Trivial estático, reproducible, offline y autosuficiente." />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="styles-extra.css" />
@@ -14,16 +14,17 @@
   <header class="app-header">
     <div><p class="eyebrow">TRIVIAL</p><h1>Partidas reproducibles y base integrada</h1></div>
     <nav class="tabs" aria-label="Secciones">
-      <button data-view="game" class="tab active">Partida</button><button data-view="stats" class="tab">Estadísticas</button><button data-view="base" class="tab">Base</button><button data-view="backup" class="tab">Copias</button>
+      <button data-view="game" class="tab active">Partida</button><button data-view="stats" class="tab">Estadísticas</button><button data-view="base" class="tab">Base</button><button data-view="diagnostics" class="tab">Diagnóstico</button><button data-view="backup" class="tab">Copias</button>
     </nav>
   </header>
   <main>
     <section id="view-game" class="view active"><div class="section-head"><div><p class="eyebrow">JUEGO</p><h2>Partida</h2></div><div class="actions"><button id="new-match-btn" class="primary">Nueva partida</button><select id="match-picker" aria-label="Cambiar partida"></select></div></div><div id="game-root"></div></section>
     <section id="view-stats" class="view"><div class="section-head"><div><p class="eyebrow">ANÁLISIS</p><h2>Estadísticas históricas</h2></div></div><div id="stats-root"></div></section>
-    <section id="view-base" class="view"><div class="section-head"><div><p class="eyebrow">DATOS</p><h2>Base de juego</h2></div></div><p class="notice">Banco, J1/J2/J3 e histórico están incluidos en CSV UTF-8 estándar dentro del repositorio. IndexedDB guarda automáticamente cada jugada nueva en este navegador.</p><div id="base-root"></div></section>
+    <section id="view-base" class="view"><div class="section-head"><div><p class="eyebrow">DATOS</p><h2>Base de juego</h2></div></div><p class="notice">Los CSV del repositorio son la semilla canónica. IndexedDB conserva partidas y eventos locales sin modificar el banco.</p><div id="base-root"></div></section>
+    <section id="view-diagnostics" class="view"><div class="section-head"><div><p class="eyebrow">INTEGRIDAD</p><h2>Diagnóstico</h2></div><button id="run-diagnostics">Comprobar ahora</button></div><div id="diagnostics-root"></div></section>
     <section id="view-backup" class="view"><div class="section-head"><div><p class="eyebrow">SEGURIDAD</p><h2>Copias y restauración</h2></div></div><div class="card backup-card"><h3>Base local completa</h3><p>La web guarda cada jugada automáticamente. La semilla canónica usa CSV UTF-8; la copia JSON sirve para transportar/restaurar el estado local completo.</p><div class="actions"><button id="export-backup" class="primary">Exportar JSON</button><label class="file-button">Importar JSON<input id="import-backup" type="file" accept="application/json,.json" hidden /></label><button id="reset-base" class="danger">Restaurar base original</button></div><p class="warning">El repositorio es público: preguntas y respuestas son deliberadamente inspeccionables.</p></div></section>
   </main>
-  <dialog id="new-match-dialog"><form id="new-match-form" method="dialog"><div class="dialog-head"><div><p class="eyebrow">CONFIGURACIÓN</p><h2>Nueva partida</h2></div><button type="button" class="icon-button" id="close-match-dialog" aria-label="Cerrar">×</button></div><label>Nombre de la partida <span class="muted">(opcional)</span><input name="name" placeholder="Partida" /></label><fieldset><legend>Jugadores · selecciona de 1 a 3</legend><div id="new-match-players" class="check-grid"></div></fieldset><fieldset><legend>Categorías incluidas</legend><div id="new-match-categories" class="check-grid"></div></fieldset><fieldset><legend>Niveles incluidos</legend><div id="new-match-levels" class="check-grid"></div></fieldset><p class="notice">La configuración, la semilla y los pesos de nivel se congelan al crear la partida. El turno rota automáticamente.</p><div class="dialog-actions"><button type="button" id="cancel-match">Cancelar</button><button class="primary" value="default">Crear partida</button></div></form></dialog>
+  <dialog id="new-match-dialog"><form id="new-match-form"><div class="dialog-head"><div><p class="eyebrow">CONFIGURACIÓN</p><h2>Nueva partida</h2></div><button type="button" class="icon-button" id="close-match-dialog" aria-label="Cerrar">×</button></div><label>Nombre de la partida <span class="muted">(opcional)</span><input name="name" placeholder="Partida" /></label><label>Banco<select id="new-match-bank" name="bank"></select></label><fieldset><legend>Jugadores · selecciona de 1 a 3</legend><div id="new-match-players" class="check-grid"></div></fieldset><fieldset><legend>Categorías incluidas</legend><div id="new-match-categories" class="check-grid"></div></fieldset><fieldset><legend>Niveles incluidos</legend><div id="new-match-levels" class="check-grid"></div></fieldset><p class="notice">Se congelan banco, jugadores, categorías, niveles, reglas, semilla PRNG, pesos originales y fecha. En cada turno debes elegir jugador y categoría.</p><div class="dialog-actions"><button type="button" id="cancel-match">Cancelar</button><button class="primary" type="submit">Crear partida</button></div></form></dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script type="module" src="src/app.js"></script>
 </body>

@@ -1,43 +1,54 @@
-export const SCHEMA_VERSION = 4;
+import { EVENT_SCHEMA_VERSION, EVENT_TYPES, RULES_VERSION, SCHEMA_VERSION } from './config.js';
 
-export const EVENT_TYPES = Object.freeze({
-  MATCH_CREATED: 'MATCH_CREATED',
-  QUESTION_DRAWN: 'QUESTION_DRAWN',
-  ANSWER_REVEALED: 'ANSWER_REVEALED',
-  RESULT_RECORDED: 'RESULT_RECORDED',
-  QUESTION_DISCARDED: 'QUESTION_DISCARDED',
-  MATCH_CLOSED: 'MATCH_CLOSED',
-  EVENT_REVERTED: 'EVENT_REVERTED',
-  EVENT_RESTORED: 'EVENT_RESTORED',
-});
+export { EVENT_TYPES, RULES_VERSION, SCHEMA_VERSION };
 
 const CONTROL_EVENTS = new Set([EVENT_TYPES.EVENT_REVERTED, EVENT_TYPES.EVENT_RESTORED]);
+const REVERSIBLE_EVENTS = new Set([EVENT_TYPES.RESULT_RECORDED, EVENT_TYPES.QUESTION_DISCARDED, EVENT_TYPES.MATCH_CLOSED]);
 
 export function sortEvents(events) {
-  return [...events].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0) || String(a.eventId).localeCompare(String(b.eventId)));
+  return [...events].sort((a, b) => Number(a.seq) - Number(b.seq) || String(a.eventId).localeCompare(String(b.eventId)));
+}
+
+function targetIds(event) {
+  const many = event.payload?.targetEventIds;
+  if (Array.isArray(many)) return many.filter(Boolean);
+  return event.payload?.targetEventId ? [event.payload.targetEventId] : [];
 }
 
 export function getRevertedEventIds(events) {
   const reverted = new Set();
   for (const event of sortEvents(events)) {
-    if (event.type === EVENT_TYPES.EVENT_REVERTED && event.payload?.targetEventId) reverted.add(event.payload.targetEventId);
-    if (event.type === EVENT_TYPES.EVENT_RESTORED && event.payload?.targetEventId) reverted.delete(event.payload.targetEventId);
+    if (event.type === EVENT_TYPES.EVENT_REVERTED) for (const id of targetIds(event)) reverted.add(id);
+    if (event.type === EVENT_TYPES.EVENT_RESTORED) for (const id of targetIds(event)) reverted.delete(id);
   }
   return reverted;
 }
 
 export function getActiveEvents(events) {
   const reverted = getRevertedEventIds(events);
-  return sortEvents(events).filter((e) => !CONTROL_EVENTS.has(e.type) && !reverted.has(e.eventId));
+  return sortEvents(events).filter((event) => !CONTROL_EVENTS.has(event.type) && !reverted.has(event.eventId));
+}
+
+export function seenQuestionKeys(events) {
+  return new Set(events.filter((event) => event.type === EVENT_TYPES.QUESTION_DRAWN && event.payload?.questionKey).map((event) => event.payload.questionKey));
 }
 
 export function deriveLiveState(match, events) {
   const active = getActiveEvents(events);
-  const state = { status: match.status ?? 'open', currentDraw: null, answerRevealed: false, timeline: active };
+  const state = { status: match.status ?? 'open', currentDraw: null, answerRevealed: false, close: null, timeline: active };
   for (const event of active) {
     switch (event.type) {
       case EVENT_TYPES.QUESTION_DRAWN:
-        state.currentDraw = { eventId: event.eventId, questionKey: event.payload.questionKey, playerId: event.payload.playerId, categoryId: event.payload.categoryId, levelKey: event.payload.levelKey, quesitoAttempt: Boolean(event.payload.quesitoAttempt), drawOrdinal: event.payload.drawOrdinal };
+        state.currentDraw = {
+          eventId: event.eventId,
+          actionId: event.actionId,
+          playerId: event.payload.playerId,
+          categoryId: event.payload.categoryId,
+          levelKey: event.payload.levelKey,
+          questionKey: event.payload.questionKey,
+          quesitoAttempt: Boolean(event.payload.quesitoAttempt),
+          drawOrdinal: Number(event.payload.drawOrdinal),
+        };
         state.answerRevealed = false;
         break;
       case EVENT_TYPES.ANSWER_REVEALED:
@@ -45,120 +56,179 @@ export function deriveLiveState(match, events) {
         break;
       case EVENT_TYPES.RESULT_RECORDED:
       case EVENT_TYPES.QUESTION_DISCARDED:
-        if (state.currentDraw?.eventId === event.payload?.drawEventId) { state.currentDraw = null; state.answerRevealed = false; }
+        if (state.currentDraw?.eventId === event.payload?.drawEventId) {
+          state.currentDraw = null;
+          state.answerRevealed = false;
+        }
         break;
-      case EVENT_TYPES.MATCH_CLOSED: state.status = 'closed'; break;
-      default: break;
+      case EVENT_TYPES.MATCH_CLOSED:
+        state.status = 'closed';
+        state.close = event.payload;
+        break;
+      default:
+        break;
     }
   }
   return state;
 }
 
 export function hash32(text) {
-  let h = 0x811c9dc5;
-  const s = String(text);
-  for (let i = 0; i < s.length; i += 1) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
-  return h >>> 0;
+  let hash = 0x811c9dc5;
+  for (const char of String(text)) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash >>> 0;
 }
 
 export function deterministicUnit(seedText) {
-  let x = hash32(seedText) || 0x6d2b79f5;
-  x += 0x6d2b79f5;
-  let t = x;
-  t = Math.imul(t ^ (t >>> 15), t | 1);
-  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  let value = hash32(seedText) || 0x6d2b79f5;
+  value += 0x6d2b79f5;
+  let mixed = value;
+  mixed = Math.imul(mixed ^ (mixed >>> 15), mixed | 1);
+  mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
+  return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
 }
 
 export function makeMatchSeed({ matchId, playerIds, categoryIds, levelKeys, bankId }) {
   return hash32(`${matchId}|${bankId}|${playerIds.join(',')}|${categoryIds.join(',')}|${levelKeys.join(',')}`).toString(16).padStart(8, '0');
 }
 
-export function baseLevelWeightsForCategory({ questions, categoryId, enabledLevelKeys }) {
+export function originalLevelWeightsForCategory({ questions, bankId, categoryId, enabledLevelKeys }) {
   const enabled = new Set(enabledLevelKeys);
   const counts = new Map();
-  for (const q of questions) {
-    if (q.categoryId !== categoryId || !enabled.has(q.levelKey)) continue;
-    counts.set(q.levelKey, (counts.get(q.levelKey) ?? 0) + 1);
+  for (const question of questions) {
+    if (question.bankId !== bankId || question.categoryId !== categoryId || !enabled.has(question.levelKey)) continue;
+    counts.set(question.levelKey, (counts.get(question.levelKey) ?? 0) + 1);
   }
-  return Object.fromEntries([...counts.entries()].sort(([a], [b]) => a.localeCompare(b)));
+  return Object.fromEntries([...counts].sort(([left], [right]) => left.localeCompare(right)));
 }
 
-export function freezeLevelWeights({ questions, categoryIds, enabledLevelKeys }) {
-  return Object.fromEntries(categoryIds.map((categoryId) => [categoryId, baseLevelWeightsForCategory({ questions, categoryId, enabledLevelKeys })]));
+export function freezeLevelWeights({ questions, bankId, categoryIds, enabledLevelKeys }) {
+  return Object.fromEntries(categoryIds.map((categoryId) => [categoryId, originalLevelWeightsForCategory({ questions, bankId, categoryId, enabledLevelKeys })]));
+}
+
+export function availableQuestions({ questions, bankId, categoryId, enabledLevelKeys, seenKeys = new Set() }) {
+  const enabled = new Set(enabledLevelKeys);
+  return questions.filter((question) => question.bankId === bankId && question.categoryId === categoryId && enabled.has(question.levelKey) && question.status === 'active' && !seenKeys.has(question.questionKey));
+}
+
+export function validateMatchConfiguration({ bankId, playerIds, categoryIds, levelKeys, questions, availablePlayerIds }) {
+  const errors = [];
+  if (!bankId) errors.push('Selecciona un banco.');
+  if (playerIds.length < 1 || playerIds.length > 3) errors.push('Selecciona entre 1 y 3 jugadores.');
+  if (new Set(playerIds).size !== playerIds.length || playerIds.some((id) => !availablePlayerIds.includes(id))) errors.push('La selección de jugadores no es válida.');
+  if (!categoryIds.length) errors.push('Selecciona al menos una categoría.');
+  if (!levelKeys.length) errors.push('Selecciona al menos un nivel.');
+  const emptyCategoryIds = categoryIds.filter((categoryId) => !questions.some((question) => question.bankId === bankId && question.categoryId === categoryId && levelKeys.includes(question.levelKey) && question.status === 'active'));
+  if (emptyCategoryIds.length) errors.push(`Sin stock para: ${emptyCategoryIds.join(', ')}.`);
+  return { ok: errors.length === 0, errors, emptyCategoryIds };
 }
 
 export function chooseLevelForDraw({ matchSeed, drawOrdinal, categoryId, playerId, enabledLevelKeys, frozenWeights, questions }) {
-  const available = enabledLevelKeys.filter((levelKey) => questions.some((q) => q.categoryId === categoryId && q.levelKey === levelKey && q.status === 'active'));
-  if (!available.length) return null;
-  const weights = frozenWeights?.[categoryId] ?? baseLevelWeightsForCategory({ questions, categoryId, enabledLevelKeys });
-  const weighted = available.map((levelKey) => ({ levelKey, weight: Math.max(0, Number(weights[levelKey] ?? 0)) }));
+  const availableLevels = enabledLevelKeys.filter((levelKey) => questions.some((question) => question.levelKey === levelKey));
+  if (!availableLevels.length) return null;
+  const base = frozenWeights?.[categoryId] ?? {};
+  const weighted = availableLevels.map((levelKey) => ({ levelKey, weight: Math.max(0, Number(base[levelKey] ?? 0)) }));
   let total = weighted.reduce((sum, item) => sum + item.weight, 0);
-  if (total <= 0) { for (const item of weighted) item.weight = 1; total = weighted.length; }
-  const unit = deterministicUnit(`${matchSeed}|level|${drawOrdinal}|${categoryId}|${playerId}`);
-  let cursor = unit * total;
+  if (total <= 0) {
+    for (const item of weighted) item.weight = 1;
+    total = weighted.length;
+  }
+  const randomUnit = deterministicUnit(`${matchSeed}|${drawOrdinal}|${playerId}|${categoryId}`);
+  let cursor = randomUnit * total;
   for (const item of weighted) {
-    if (cursor < item.weight) return { levelKey: item.levelKey, unit, weights: Object.fromEntries(weighted.map((w) => [w.levelKey, w.weight])) };
+    if (cursor < item.weight) return { levelKey: item.levelKey, randomUnit, effectiveWeights: Object.fromEntries(weighted.map(({ levelKey, weight }) => [levelKey, weight])) };
     cursor -= item.weight;
   }
   const last = weighted.at(-1);
-  return { levelKey: last.levelKey, unit, weights: Object.fromEntries(weighted.map((w) => [w.levelKey, w.weight])) };
+  return { levelKey: last.levelKey, randomUnit, effectiveWeights: Object.fromEntries(weighted.map(({ levelKey, weight }) => [levelKey, weight])) };
 }
 
-export function nextQuestionWithinLevel({ questions, categoryId, levelKey }) {
-  return questions.filter((q) => q.status === 'active' && q.categoryId === categoryId && q.levelKey === levelKey).sort((a, b) => {
-    const ao = Number.isFinite(Number(a.randomOrder)) ? Number(a.randomOrder) : Number.MAX_SAFE_INTEGER;
-    const bo = Number.isFinite(Number(b.randomOrder)) ? Number(b.randomOrder) : Number.MAX_SAFE_INTEGER;
-    return ao - bo || String(a.questionId).localeCompare(String(b.questionId));
-  })[0] ?? null;
+export function stableQuestionCompare(left, right) {
+  return String(left.orderKey).localeCompare(String(right.orderKey)) || String(left.questionKey).localeCompare(String(right.questionKey));
 }
 
-export function selectReplacementQuestion({ questions, categoryId, levelKey }) { return nextQuestionWithinLevel({ questions, categoryId, levelKey }); }
+export function nextQuestionWithinLevel({ questions, levelKey }) {
+  return questions.filter((question) => question.levelKey === levelKey).sort(stableQuestionCompare)[0] ?? null;
+}
 
-export function selectQuestionForDraw(args) {
-  const level = chooseLevelForDraw(args);
+export function selectQuestionForDraw({ questions, categoryId, playerId, enabledLevelKeys, frozenWeights, matchSeed, drawOrdinal }) {
+  const level = chooseLevelForDraw({ questions, categoryId, playerId, enabledLevelKeys, frozenWeights, matchSeed, drawOrdinal });
   if (!level) return null;
-  const question = nextQuestionWithinLevel({ questions: args.questions, categoryId: args.categoryId, levelKey: level.levelKey });
+  const question = nextQuestionWithinLevel({ questions, levelKey: level.levelKey });
   return question ? { question, ...level } : null;
 }
 
-export function activeComputableAttempts(attempts) { return attempts.filter((a) => a.active !== false && a.computable !== false && a.correct !== null && a.correct !== undefined); }
-
-export function nextPlayerId(match, attempts) {
-  const ids = match.playerIds ?? [];
-  if (!ids.length) return null;
-  const completed = activeComputableAttempts(attempts).filter((a) => a.matchId === match.matchId).length;
-  return ids[completed % ids.length];
+export function selectReplacementQuestion(args) {
+  const sameLevel = nextQuestionWithinLevel({ questions: args.questions, levelKey: args.previousLevelKey });
+  if (sameLevel) {
+    const randomUnit = deterministicUnit(`${args.matchSeed}|${args.drawOrdinal}|${args.playerId}|${args.categoryId}|replacement`);
+    return { question: sameLevel, levelKey: args.previousLevelKey, randomUnit, effectiveWeights: { [args.previousLevelKey]: Number(args.frozenWeights?.[args.categoryId]?.[args.previousLevelKey] ?? 1) } };
+  }
+  return selectQuestionForDraw(args);
 }
 
-export function quesitosByPlayer(attempts) {
+export function drawOrdinal(events) {
+  return events.filter((event) => event.type === EVENT_TYPES.QUESTION_DRAWN).length + 1;
+}
+
+export function resultEvents(events) {
+  return getActiveEvents(events).filter((event) => event.type === EVENT_TYPES.RESULT_RECORDED);
+}
+
+export function quesitosByPlayer(eventsOrAttempts) {
   const map = new Map();
-  for (const a of attempts) {
-    if (a.active === false || !a.quesitoWon) continue;
-    const set = map.get(a.playerId) ?? new Set(); set.add(a.categoryId); map.set(a.playerId, set);
+  for (const item of eventsOrAttempts) {
+    const payload = item.type === EVENT_TYPES.RESULT_RECORDED ? item.payload : item;
+    if (item.active === false || !payload?.quesitoWon) continue;
+    const set = map.get(payload.playerId) ?? new Set();
+    set.add(payload.categoryId);
+    map.set(payload.playerId, set);
   }
   return map;
 }
 
-export function computeStats(attempts, matches = []) {
-  const active = activeComputableAttempts(attempts);
-  const byPlayer = new Map(), byPlayerCategory = new Map(), byPlayerLevel = new Map(), byMatchPlayer = new Map();
-  const ensure = (map, key, seed) => { if (!map.has(key)) map.set(key, { ...seed }); return map.get(key); };
-  const bump = (row, a) => { row.resolved += 1; row.correct += a.correct ? 1 : 0; row.wrong += a.correct ? 0 : 1; row.quesitoAttempts = (row.quesitoAttempts ?? 0) + (a.quesitoAttempt ? 1 : 0); row.quesitosWon = (row.quesitosWon ?? 0) + (a.quesitoWon ? 1 : 0); };
-  for (const a of active) {
-    bump(ensure(byPlayer, a.playerId, { playerId: a.playerId, resolved: 0, correct: 0, wrong: 0, quesitoAttempts: 0, quesitosWon: 0 }), a);
-    bump(ensure(byPlayerCategory, `${a.playerId}|${a.categoryId}`, { playerId: a.playerId, categoryId: a.categoryId, resolved: 0, correct: 0, wrong: 0, quesitoAttempts: 0, quesitosWon: 0 }), a);
-    bump(ensure(byPlayerLevel, `${a.playerId}|${a.levelKey}`, { playerId: a.playerId, levelKey: a.levelKey, resolved: 0, correct: 0, wrong: 0, quesitoAttempts: 0, quesitosWon: 0 }), a);
-    bump(ensure(byMatchPlayer, `${a.matchId}|${a.playerId}`, { matchId: a.matchId, playerId: a.playerId, resolved: 0, correct: 0, wrong: 0, quesitoAttempts: 0, quesitosWon: 0 }), a);
-  }
-  for (const map of [byPlayer, byPlayerCategory, byPlayerLevel, byMatchPlayer]) for (const row of map.values()) row.precision = row.resolved ? row.correct / row.resolved : 0;
-  const matchMap = new Map(matches.map((m) => [m.matchId, m]));
-  const wins = new Map(), grouped = new Map();
-  for (const row of byMatchPlayer.values()) { if (!grouped.has(row.matchId)) grouped.set(row.matchId, []); grouped.get(row.matchId).push(row); }
-  for (const [matchId, rows] of grouped.entries()) {
-    if (matchMap.get(matchId)?.status !== 'closed' || !rows.length) continue;
-    const best = Math.max(...rows.map((r) => r.quesitosWon));
-    for (const row of rows.filter((r) => r.quesitosWon === best)) wins.set(row.playerId, (wins.get(row.playerId) ?? 0) + 1);
-  }
-  return { byPlayer: [...byPlayer.values()], byPlayerCategory: [...byPlayerCategory.values()], byPlayerLevel: [...byPlayerLevel.values()], byMatchPlayer: [...byMatchPlayer.values()], wins };
+export function winnersForClose(match, events) {
+  const quesitos = quesitosByPlayer(resultEvents(events));
+  const scores = match.playerIds.map((playerId) => ({ playerId, score: quesitos.get(playerId)?.size ?? 0 }));
+  const maximum = Math.max(0, ...scores.map(({ score }) => score));
+  return scores.filter(({ score }) => score === maximum).map(({ playerId }) => playerId);
+}
+
+export function hasNormalVictory(match, events, playerId) {
+  const owned = quesitosByPlayer(resultEvents(events)).get(playerId) ?? new Set();
+  return match.enabledCategoryIds.every((categoryId) => owned.has(categoryId));
+}
+
+export function undoCandidate(events) {
+  const active = getActiveEvents(events);
+  const candidate = [...active].reverse().find((event) => REVERSIBLE_EVENTS.has(event.type));
+  if (!candidate) return null;
+  const actionId = candidate.actionId;
+  const group = actionId ? active.filter((event) => event.actionId === actionId) : [candidate];
+  return { actionId, targetEventIds: group.map((event) => event.eventId), label: candidate.type };
+}
+
+export function redoCandidate(events) {
+  const sorted = sortEvents(events);
+  const lastControl = [...sorted].reverse().find((event) => CONTROL_EVENTS.has(event.type));
+  if (!lastControl || lastControl.type !== EVENT_TYPES.EVENT_REVERTED) return null;
+  const after = sorted.filter((event) => event.seq > lastControl.seq && !CONTROL_EVENTS.has(event.type));
+  if (after.length) return null;
+  return { targetEventIds: targetIds(lastControl), label: lastControl.payload?.label ?? 'acción' };
+}
+
+export function makeEvent({ matchId, seq, type, payload = {}, timestamp = new Date().toISOString(), actionId = null, idempotencyKey = null }) {
+  return {
+    eventId: `${matchId}|E${String(seq).padStart(6, '0')}`,
+    matchId,
+    seq,
+    timestamp,
+    type,
+    schemaVersion: EVENT_SCHEMA_VERSION,
+    actionId,
+    idempotencyKey,
+    payload,
+  };
 }
