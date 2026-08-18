@@ -21,12 +21,8 @@ export function sortEvents(events) {
 export function getRevertedEventIds(events) {
   const reverted = new Set();
   for (const event of sortEvents(events)) {
-    if (event.type === EVENT_TYPES.EVENT_REVERTED && event.payload?.targetEventId) {
-      reverted.add(event.payload.targetEventId);
-    }
-    if (event.type === EVENT_TYPES.EVENT_RESTORED && event.payload?.targetEventId) {
-      reverted.delete(event.payload.targetEventId);
-    }
+    if (event.type === EVENT_TYPES.EVENT_REVERTED && event.payload?.targetEventId) reverted.add(event.payload.targetEventId);
+    if (event.type === EVENT_TYPES.EVENT_RESTORED && event.payload?.targetEventId) reverted.delete(event.payload.targetEventId);
   }
   return reverted;
 }
@@ -65,14 +61,13 @@ export function deriveMatchState(match, events) {
           playerId: event.payload.playerId,
           categoryId: event.payload.categoryId,
           levelKey: event.payload.levelKey,
+          quesitoAttempt: Boolean(event.payload.quesitoAttempt),
         };
         state.answerRevealed = false;
         state.usedQuestionKeys.add(event.payload.questionKey);
         break;
       case EVENT_TYPES.ANSWER_REVEALED:
-        if (state.currentDraw && event.payload?.drawEventId === state.currentDraw.eventId) {
-          state.answerRevealed = true;
-        }
+        if (state.currentDraw && event.payload?.drawEventId === state.currentDraw.eventId) state.answerRevealed = true;
         break;
       case EVENT_TYPES.RESULT_RECORDED: {
         state.results.push(event.payload);
@@ -136,16 +131,13 @@ export function computeStats(matches, events) {
   for (const [matchId, matchEvents] of activeEventsByMatch.entries()) {
     if (!matchMap.has(matchId)) continue;
     for (const event of getActiveEvents(matchEvents)) {
-      if (event.type === EVENT_TYPES.RESULT_RECORDED) {
-        activeResults.push({ matchId, ...event.payload });
-      }
+      if (event.type === EVENT_TYPES.RESULT_RECORDED) activeResults.push({ matchId, ...event.payload });
     }
   }
 
   const byPlayer = new Map();
   const byPlayerCategory = new Map();
   const byPlayerLevel = new Map();
-
   const ensure = (map, key, seed) => {
     if (!map.has(key)) map.set(key, { ...seed });
     return map.get(key);
@@ -175,9 +167,7 @@ export function computeStats(matches, events) {
   }
 
   for (const map of [byPlayer, byPlayerCategory, byPlayerLevel]) {
-    for (const row of map.values()) {
-      row.precision = row.resolved ? row.correct / row.resolved : 0;
-    }
+    for (const row of map.values()) row.precision = row.resolved ? row.correct / row.resolved : 0;
   }
 
   return {
