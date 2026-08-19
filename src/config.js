@@ -2,7 +2,7 @@ export const APP_NAME = 'Trivial';
 export const SCHEMA_VERSION = 7;
 export const EVENT_SCHEMA_VERSION = 2;
 export const RULES_VERSION = 'trivial-rules-3.0.0';
-export const BUILD_VERSION = '2026-08-19.6';
+export const BUILD_VERSION = '2026-08-19.7';
 
 export const EVENT_TYPES = Object.freeze({
   MATCH_CREATED: 'MATCH_CREATED',
