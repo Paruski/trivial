@@ -20,7 +20,9 @@
 - evitar dependencia temporal innecesaria;
 - revisar duplicados semánticos además del detector exacto.
 
-La escala actual contiene `CUR` (curricular), `AUT` (autodidacta) y `NIC` (nicho), pero ninguna regla del motor depende de esos valores ni de que sean tres.
+La escala actual contiene `CUR` (curricular: enseñado en la educación obligatoria española, al menos desde los años setenta), `AUT` (fuera del currículo general pero fácilmente aprendible por curiosidad) y `NIC` (requiere formación profunda, de buen nivel universitario). Las ampliaciones se auditan con reparto 70/20/10 por categoría. El motor lee claves y pesos desde `levels.csv`: no depende de esos IDs ni de que sean tres.
+
+Las preguntas deben tener estilo Trivial: cultura general conocible, formulación concreta y no ambigua, sin convertir terminología excesivamente especializada en dificultad artificial. La revisión editorial debe contrastar enunciado, respuesta y explicación, y reclasificar el nivel cuando la formación necesaria no coincida con su definición.
 
 ## Orden estable
 

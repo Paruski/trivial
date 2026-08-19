@@ -5,7 +5,7 @@ const required = Object.freeze({
   meta: ['key', 'value'],
   banks: ['bank_id', 'name', 'seed_version', 'question_count', 'level_weights_policy'],
   categories: ['bank_id', 'category_id', 'category_key', 'label', 'color', 'emoji', 'active', 'quesito_default'],
-  levels: ['level_key', 'scale_id', 'level_id_local', 'label', 'order', 'description'],
+  levels: ['level_key', 'scale_id', 'level_id_local', 'label', 'order', 'probability_weight', 'description'],
   questions: ['bank_id', 'question_id', 'question_key', 'category_id', 'level_key', 'prompt', 'answer', 'explanation', 'status', 'order_key'],
   players: ['player_id', 'name', 'active'],
   matches: ['match_id', 'name', 'bank_id', 'player_ids', 'enabled_category_ids', 'enabled_level_keys', 'rules_version', 'level_weights_json', 'status', 'created_at', 'closed_at', 'close_reason', 'seed', 'source'],
@@ -31,7 +31,7 @@ function mapRows(raw) {
   const metaValues = Object.fromEntries(raw.meta.map((row) => [row.key, row.value]));
   const banks = raw.banks.map((row) => ({ bankId: row.bank_id, name: row.name, seedVersion: row.seed_version, questionCount: csvInt(row.question_count), levelWeightsPolicy: row.level_weights_policy, seedOwned: true }));
   const categories = raw.categories.map((row) => ({ categoryKey: row.category_key, bankId: row.bank_id, categoryId: row.category_id, label: row.label, color: row.color, emoji: row.emoji, active: csvBool(row.active, true), quesitoDefault: csvBool(row.quesito_default, true), seedOwned: true }));
-  const levels = raw.levels.map((row) => ({ levelKey: row.level_key, scaleId: row.scale_id, levelIdLocal: row.level_id_local, label: row.label, order: csvInt(row.order), description: row.description, seedOwned: true }));
+  const levels = raw.levels.map((row) => ({ levelKey: row.level_key, scaleId: row.scale_id, levelIdLocal: row.level_id_local, label: row.label, order: csvInt(row.order), probabilityWeight: csvInt(row.probability_weight), description: row.description, seedOwned: true }));
   const questions = raw.questions.map((row) => ({ questionKey: row.question_key, bankId: row.bank_id, questionId: row.question_id, categoryId: row.category_id, levelKey: row.level_key, prompt: row.prompt, answer: row.answer, explanation: row.explanation, status: row.status, sourceStatus: row.source_status ?? '', randomOrder: csvInt(row.random_order, Number.MAX_SAFE_INTEGER), orderKey: row.order_key, seedOwned: true }));
   const players = raw.players.map((row) => ({ playerId: row.player_id, name: row.name, active: csvBool(row.active, true), seedOwned: true }));
   const matches = raw.matches.map((row) => ({ matchId: row.match_id, name: row.name, bankId: row.bank_id, playerIds: csvList(row.player_ids), enabledCategoryIds: csvList(row.enabled_category_ids), enabledLevelKeys: csvList(row.enabled_level_keys), rulesVersion: row.rules_version, levelWeights: parseJson(row.level_weights_json, `${row.match_id}.level_weights_json`), status: row.status, createdAt: row.created_at || null, closedAt: row.closed_at || null, closeReason: row.close_reason || null, seed: row.seed, source: row.source, seedOwned: true }));
@@ -61,6 +61,7 @@ export function validateSeed(seed) {
   const questionKeys = new Set(seed.questions.map((row) => row.questionKey));
   const playerIds = new Set(seed.players.map((row) => row.playerId));
   const matchIds = new Set(seed.matches.map((row) => row.matchId));
+  for (const row of seed.levels) if (!(Number(row.probabilityWeight) > 0)) add('LEVEL_WEIGHT', row.levelKey, 'probability_weight debe ser positivo');
   for (const row of seed.categories) {
     if (!bankIds.has(row.bankId)) add('FK', row.categoryKey, `bank_id ${row.bankId}`);
     if (row.categoryKey !== `${row.bankId}|${row.categoryId}`) add('KEY', row.categoryKey, 'category_key debe ser bank_id|category_id');

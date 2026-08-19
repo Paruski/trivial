@@ -3,7 +3,9 @@ import { deriveLiveState, getActiveEvents } from './domain.js';
 
 export function diagnose(snapshot) {
   const errors = [];
+  const warnings = [];
   const add = (type, id, detail) => errors.push({ type, id: String(id ?? ''), detail });
+  const warn = (type, id, detail) => warnings.push({ type, id: String(id ?? ''), detail });
   const duplicate = (rows, key, type = 'DUPLICATE_ID') => {
     const seen = new Set();
     for (const row of rows) { const value = row[key]; if (seen.has(value)) add(type, value, key); seen.add(value); }
@@ -58,5 +60,11 @@ export function diagnose(snapshot) {
   const meta = Object.fromEntries(snapshot.meta.map((row) => [row.key, row.value]));
   if (Number(meta.schemaVersion ?? meta.schema_version) !== SCHEMA_VERSION) add('SCHEMA_VERSION', meta.schemaVersion ?? meta.schema_version, `esperado ${SCHEMA_VERSION}`);
   if (!meta.seedVersion && !meta.seed_version) add('SEED_VERSION', 'meta', 'ausente');
-  return { ok: errors.length === 0, errors, summary: { questionCount: snapshot.questions.length, matchCount: snapshot.matches.length, eventCount: snapshot.events.length, seedVersion: meta.seedVersion ?? meta.seed_version, schemaVersion: Number(meta.schemaVersion ?? meta.schema_version) } };
+  for (const category of snapshot.categories.filter((row) => row.active !== false)) for (const level of snapshot.levels) {
+    const stock = snapshot.questions.filter((question) => question.bankId === category.bankId && question.categoryId === category.categoryId && question.levelKey === level.levelKey && question.status === 'active').length;
+    if (!stock) warn('STOCK_EXHAUSTED', `${category.categoryKey}|${level.levelIdLocal ?? level.levelKey}`, '0 preguntas activas; solicitar reposición');
+  }
+  const retiredLocally = snapshot.questions.filter((question) => question.retiredLocally === true).length;
+  if (retiredLocally) warn('LOCAL_RETIREMENTS', 'questions', `${retiredLocally} preguntas comprometidas retiradas localmente`);
+  return { ok: errors.length === 0, errors, warnings, summary: { questionCount: snapshot.questions.length, activeQuestionCount: snapshot.questions.filter((question) => question.status === 'active').length, localRetirements: retiredLocally, matchCount: snapshot.matches.length, eventCount: snapshot.events.length, seedVersion: meta.seedVersion ?? meta.seed_version, schemaVersion: Number(meta.schemaVersion ?? meta.schema_version) } };
 }

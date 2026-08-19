@@ -118,7 +118,7 @@ function renderGame() {
   const layout = node('div', { class: 'grid two' });
   const main = node('div', { class: 'card' });
   const side = node('aside', { class: 'card' });
-  main.append(node('p', { class: 'eyebrow', text: live.status === 'closed' ? 'PARTIDA CERRADA' : live.currentDraw ? 'PREGUNTA PENDIENTE' : 'NUEVO TURNO' }), node('h3', { text: live.status === 'closed' ? 'Partida finalizada' : live.currentDraw ? `Juega ${playerName(live.currentDraw.playerId)}` : 'Elige jugador y categoría' }), node('p', { class: 'muted', text: `${match.playerIds.map(playerName).join(' · ')} · ${categories.length} categorías · ${match.enabledLevelKeys.length} niveles` }));
+  main.append(node('p', { class: 'eyebrow', text: live.status === 'closed' ? 'PARTIDA CERRADA' : live.currentDraw ? 'PREGUNTA PENDIENTE' : 'NUEVO TURNO' }), node('h3', { text: live.status === 'closed' ? 'Partida finalizada' : live.currentDraw ? 'Pregunta en juego' : 'Elige la categoría' }), node('p', { class: 'muted', text: `Turno actual: ${playerName(live.currentTurnPlayerId)} · ${categories.length} categorías · niveles con pesos fijos 70/20/10` }));
   if (live.status === 'closed') renderClosed(main, match, live);
   else if (live.currentDraw) renderQuestion(main, match, live);
   else renderDraw(main, match, events, categories);
@@ -133,43 +133,47 @@ function renderClosed(root, match, live) {
 }
 
 function renderDraw(root, match, events, categories) {
-  root.append(node('p', { text: '1. Jugador' }));
-  const players = node('div', { class: 'player-strip', 'data-testid': 'player-picker' });
-  for (const playerId of match.playerIds) players.append(node('button', { type: 'button', class: `player-button${selectedPlayerId === playerId ? ' active' : ''}`, text: playerName(playerId), 'data-player-id': playerId, onclick: () => { selectedPlayerId = playerId; renderGame(); } }));
-  root.append(players, node('p', { text: '2. Categoría' }));
+  const live = deriveLiveState(match, events);
+  root.append(node('p', { class: 'turn-banner', text: `Turno actual · ${playerName(live.currentTurnPlayerId)}` }), node('p', { text: '1. Categoría' }));
   const categoryGrid = node('div', { class: 'category-grid', 'data-testid': 'category-picker' });
   for (const category of categories) {
     const stock = matchAvailable(match, category.categoryId, events).length;
-    categoryGrid.append(node('button', { type: 'button', class: `category-button${selectedCategoryId === category.categoryId ? ' active' : ''}${stock ? '' : ' stock-zero'}`, text: `${category.emoji} ${category.label} · ${stock}`, disabled: stock === 0, 'data-category-id': category.categoryId, onclick: () => { selectedCategoryId = category.categoryId; renderGame(); } }));
+    categoryGrid.append(node('button', { type: 'button', class: `category-button${selectedCategoryId === category.categoryId ? ' active' : ''}${stock ? '' : ' stock-zero'}`, disabled: stock === 0, 'data-category-id': category.categoryId, onclick: () => { selectedCategoryId = category.categoryId; selectedQuesito = false; renderGame(); } }, [node('span', { class: 'category-dot', style: `--category-color:${category.color}` }), `${category.emoji} ${category.label} · ${stock}`]));
   }
   root.append(categoryGrid);
-  const owned = matchQuesitos(match, events).get(selectedPlayerId)?.has(selectedCategoryId);
+  const owned = matchQuesitos(match, events).get(live.currentTurnPlayerId)?.has(selectedCategoryId);
   const label = node('label', { class: 'quesito-toggle' });
-  const checkbox = node('input', { id: 'quesito-toggle', type: 'checkbox', checked: selectedQuesito, disabled: !selectedPlayerId || !selectedCategoryId || owned, onchange: (event) => { selectedQuesito = event.target.checked; } });
-  label.append(checkbox, owned ? '3. Quesito ya obtenido (no se puede duplicar)' : '3. Este turno es un intento de quesito');
-  const canDraw = Boolean(selectedPlayerId && selectedCategoryId && matchAvailable(match, selectedCategoryId, events).length);
+  const checkbox = node('input', { id: 'quesito-toggle', type: 'checkbox', checked: selectedQuesito, disabled: !selectedCategoryId || owned, onchange: (event) => { selectedQuesito = event.target.checked; } });
+  label.append(checkbox, owned ? '2. Quesito ya obtenido (no se puede duplicar)' : '2. Este turno es un intento de quesito');
+  const canDraw = Boolean(selectedCategoryId && matchAvailable(match, selectedCategoryId, events).length);
   const drawButton = node('button', { id: 'draw-question', class: 'primary', type: 'button', text: 'Sacar pregunta', disabled: !canDraw, onclick: () => drawQuestion(match) });
   root.append(label, node('div', { class: 'toolbar' }, drawButton));
   if (!categories.some((category) => matchAvailable(match, category.categoryId, events).length)) root.append(node('p', { class: 'warning', text: 'No queda stock para esta configuración. Cierra la partida o crea otra con más niveles.' }));
 }
 
 function drawQuestion(match) {
-  const playerId = selectedPlayerId;
   const categoryId = selectedCategoryId;
   const quesitoAttempt = selectedQuesito;
   runAction(async () => {
+    let exhausted = null;
     await db.commitMatch(match.matchId, (events) => {
       const live = deriveLiveState(match, events);
+      const playerId = live.currentTurnPlayerId;
       if (live.status !== 'open') throw new Error('La partida está cerrada.');
       if (live.currentDraw) throw new Error('Ya hay una pregunta pendiente.');
-      if (!match.playerIds.includes(playerId) || !match.enabledCategoryIds.includes(categoryId)) throw new Error('Elige explícitamente un jugador y una categoría válidos.');
+      if (!match.playerIds.includes(playerId) || !match.enabledCategoryIds.includes(categoryId)) throw new Error('Elige una categoría válida.');
       const ordinal = drawOrdinal(events);
       const available = matchAvailable(match, categoryId, events);
       const pick = selectQuestionForDraw({ questions: available, categoryId, playerId, enabledLevelKeys: match.enabledLevelKeys, frozenWeights: match.levelWeights, matchSeed: match.seed, drawOrdinal: ordinal });
       if (!pick) throw new Error('No queda stock elegible.');
-      return [{ type: EVENT_TYPES.QUESTION_DRAWN, actionId: `draw:${ordinal}`, idempotencyKey: `${match.matchId}:draw:${ordinal}`, payload: { drawOrdinal: ordinal, randomUnit: pick.randomUnit, effectiveWeights: pick.effectiveWeights, playerId, categoryId, levelKey: pick.levelKey, questionKey: pick.question.questionKey, quesitoAttempt: Boolean(quesitoAttempt) } }];
+      if (pick.exhausted) {
+        exhausted = pick.levelKey;
+        return [{ type: EVENT_TYPES.STOCK_EXHAUSTED, actionId: `stock:${ordinal}`, idempotencyKey: `${match.matchId}:stock:${ordinal}`, payload: { drawOrdinal: ordinal, randomUnit: pick.randomUnit, effectiveWeights: pick.effectiveWeights, playerId, categoryId, levelKey: pick.levelKey } }];
+      }
+      return [{ type: EVENT_TYPES.QUESTION_DRAWN, actionId: `draw:${ordinal}`, idempotencyKey: `${match.matchId}:draw:${ordinal}`, payload: { drawOrdinal: ordinal, randomUnit: pick.randomUnit, effectiveWeights: pick.effectiveWeights, playerId, turnPlayerId: playerId, categoryId, levelKey: pick.levelKey, questionKey: pick.question.questionKey, quesitoAttempt: Boolean(quesitoAttempt) } }];
     });
     await refresh();
+    if (exhausted) toast(`Stock agotado: ${categoryFor(match.bankId, categoryId)?.label ?? categoryId} · ${levelFor(exhausted)?.label ?? exhausted}. Solicita reposición al desarrollador.`);
   });
 }
 
@@ -179,11 +183,17 @@ function renderQuestion(root, match, live) {
   if (!question) { root.append(node('p', { class: 'warning', text: `Pregunta no encontrada (${draw.questionKey}). Ejecuta Diagnóstico.` })); return; }
   const category = categoryFor(match.bankId, draw.categoryId);
   const level = levelFor(draw.levelKey);
-  root.append(node('div', { class: 'badges' }, [node('span', { class: 'badge', text: `${category?.emoji ?? ''} ${category?.label ?? draw.categoryId}` }), node('span', { class: 'badge', text: `Nivel: ${level?.label ?? draw.levelKey}` }), node('span', { class: 'badge', text: playerName(draw.playerId) }), draw.quesitoAttempt ? node('span', { class: 'badge', text: 'Intento de quesito' }) : null]));
+  root.append(node('div', { class: 'badges' }, [node('span', { class: 'badge' }, [node('span', { class: 'category-dot', style: `--category-color:${category?.color ?? '#fff'}` }), `${category?.emoji ?? ''} ${category?.label ?? draw.categoryId}`]), node('span', { class: 'badge', text: `Nivel: ${level?.label ?? draw.levelKey}` }), node('span', { class: 'badge', text: `Turno: ${playerName(draw.turnPlayerId ?? draw.playerId)}` }), draw.quesitoAttempt ? node('span', { class: 'badge', text: 'Intento de quesito' }) : null]));
   const card = node('div', { class: 'question-card' }, [node('div', { class: 'question-text', text: question.prompt }), live.answerRevealed ? node('div', { class: 'answer-box', 'data-testid': 'answer' }, [node('strong', { text: 'Respuesta: ' }), question.answer, node('p', { class: 'muted', text: question.explanation })]) : null]);
   const controls = node('div', { class: 'toolbar' });
   if (!live.answerRevealed) controls.append(node('button', { id: 'reveal-answer', type: 'button', text: 'Mostrar respuesta', onclick: () => revealAnswer(match, draw) }));
-  else controls.append(node('button', { id: 'record-correct', class: 'good', type: 'button', text: 'Acierto', onclick: () => recordResult(match, draw, true) }), node('button', { id: 'record-wrong', class: 'danger', type: 'button', text: 'Fallo', onclick: () => recordResult(match, draw, false) }), node('button', { id: 'discard-question', type: 'button', text: 'Descartar', onclick: () => discardQuestion(match, draw) }));
+  else {
+    if (!match.playerIds.includes(selectedPlayerId)) selectedPlayerId = draw.turnPlayerId ?? draw.playerId;
+    const respondent = node('div', { class: 'respondent-picker', 'data-testid': 'respondent-picker' }, [node('strong', { text: '¿Quién ha respondido?' })]);
+    for (const playerId of match.playerIds) respondent.append(node('button', { type: 'button', class: `player-button${selectedPlayerId === playerId ? ' active' : ''}`, text: playerName(playerId), 'data-respondent-id': playerId, onclick: () => { selectedPlayerId = playerId; renderGame(); } }));
+    root.append(respondent);
+    controls.append(node('button', { id: 'record-correct', class: 'good', type: 'button', text: 'Acierto', onclick: () => recordResult(match, draw, true) }), node('button', { id: 'record-wrong', class: 'danger', type: 'button', text: 'Fallo', onclick: () => recordResult(match, draw, false) }), node('button', { id: 'discard-question', type: 'button', text: 'Descartar comprometida', onclick: () => discardQuestion(match, draw) }));
+  }
   root.append(card, controls);
 }
 
@@ -200,17 +210,19 @@ function revealAnswer(match, draw) {
 }
 
 function recordResult(match, draw, correct) {
+  const respondentId = selectedPlayerId;
   runAction(async () => {
     await db.commitMatch(match.matchId, (events) => {
       const live = deriveLiveState(match, events);
       if (live.currentDraw?.eventId !== draw.eventId || !live.answerRevealed) throw new Error('Primero muestra la respuesta de la pregunta pendiente.');
       const owned = quesitosByPlayer(resultEvents(events));
-      const quesitoWon = Boolean(correct && draw.quesitoAttempt && !owned.get(draw.playerId)?.has(draw.categoryId));
+      if (!match.playerIds.includes(respondentId)) throw new Error('Indica qué jugador ha respondido.');
+      const quesitoWon = Boolean(correct && draw.quesitoAttempt && !owned.get(respondentId)?.has(draw.categoryId));
       const actionId = `result:${draw.eventId}`;
-      const result = { type: EVENT_TYPES.RESULT_RECORDED, actionId, idempotencyKey: `${match.matchId}:terminal:${draw.eventId}`, payload: { drawEventId: draw.eventId, questionKey: draw.questionKey, playerId: draw.playerId, categoryId: draw.categoryId, levelKey: draw.levelKey, correct: Boolean(correct), quesitoAttempt: draw.quesitoAttempt, quesitoWon } };
-      const won = new Set(owned.get(draw.playerId) ?? []);
+      const result = { type: EVENT_TYPES.RESULT_RECORDED, actionId, idempotencyKey: `${match.matchId}:terminal:${draw.eventId}`, payload: { drawEventId: draw.eventId, questionKey: draw.questionKey, playerId: respondentId, turnPlayerId: draw.turnPlayerId ?? draw.playerId, categoryId: draw.categoryId, levelKey: draw.levelKey, correct: Boolean(correct), quesitoAttempt: draw.quesitoAttempt, quesitoWon } };
+      const won = new Set(owned.get(respondentId) ?? []);
       if (quesitoWon) won.add(draw.categoryId);
-      if (match.enabledCategoryIds.every((categoryId) => won.has(categoryId))) return [result, { type: EVENT_TYPES.MATCH_CLOSED, actionId, payload: { reason: 'victoria', winners: [draw.playerId] } }];
+      if (match.enabledCategoryIds.every((categoryId) => won.has(categoryId))) return [result, { type: EVENT_TYPES.MATCH_CLOSED, actionId, payload: { reason: 'victoria', winners: [respondentId] } }];
       return [result];
     });
     selectedPlayerId = null; selectedCategoryId = null; selectedQuesito = false;
@@ -221,17 +233,19 @@ function recordResult(match, draw, correct) {
 function discardQuestion(match, draw) {
   runAction(async () => {
     let replaced = false;
-    await db.commitMatch(match.matchId, (events) => {
+    await db.commitDiscard(match.matchId, draw.questionKey, (events) => {
       const live = deriveLiveState(match, events);
       if (live.currentDraw?.eventId !== draw.eventId || !live.answerRevealed) throw new Error('Primero muestra la respuesta de la pregunta pendiente.');
       const actionId = `discard:${draw.eventId}`;
-      const specifications = [{ type: EVENT_TYPES.QUESTION_DISCARDED, actionId, idempotencyKey: `${match.matchId}:terminal:${draw.eventId}`, payload: { drawEventId: draw.eventId, questionKey: draw.questionKey, playerId: draw.playerId, categoryId: draw.categoryId, levelKey: draw.levelKey, quesitoAttempt: draw.quesitoAttempt } }];
+      const specifications = [{ type: EVENT_TYPES.QUESTION_DISCARDED, actionId, idempotencyKey: `${match.matchId}:terminal:${draw.eventId}`, payload: { drawEventId: draw.eventId, questionKey: draw.questionKey, playerId: draw.turnPlayerId ?? draw.playerId, categoryId: draw.categoryId, levelKey: draw.levelKey, quesitoAttempt: draw.quesitoAttempt, retiredLocally: true } }];
       const ordinal = drawOrdinal(events);
       const available = matchAvailable(match, draw.categoryId, events);
-      const replacement = selectReplacementQuestion({ questions: available, previousLevelKey: draw.levelKey, categoryId: draw.categoryId, playerId: draw.playerId, enabledLevelKeys: match.enabledLevelKeys, frozenWeights: match.levelWeights, matchSeed: match.seed, drawOrdinal: ordinal });
-      if (replacement) {
+      const replacement = selectReplacementQuestion({ questions: available, previousLevelKey: draw.levelKey, categoryId: draw.categoryId, playerId: draw.turnPlayerId ?? draw.playerId, enabledLevelKeys: match.enabledLevelKeys, frozenWeights: match.levelWeights, matchSeed: match.seed, drawOrdinal: ordinal });
+      if (replacement?.question) {
         replaced = true;
-        specifications.push({ type: EVENT_TYPES.QUESTION_DRAWN, actionId, payload: { drawOrdinal: ordinal, randomUnit: replacement.randomUnit, effectiveWeights: replacement.effectiveWeights, playerId: draw.playerId, categoryId: draw.categoryId, levelKey: replacement.levelKey, questionKey: replacement.question.questionKey, quesitoAttempt: draw.quesitoAttempt, replacementForEventId: draw.eventId } });
+        specifications.push({ type: EVENT_TYPES.QUESTION_DRAWN, actionId, payload: { drawOrdinal: ordinal, randomUnit: replacement.randomUnit, effectiveWeights: replacement.effectiveWeights, playerId: draw.turnPlayerId ?? draw.playerId, turnPlayerId: draw.turnPlayerId ?? draw.playerId, categoryId: draw.categoryId, levelKey: replacement.levelKey, questionKey: replacement.question.questionKey, quesitoAttempt: draw.quesitoAttempt, replacementForEventId: draw.eventId } });
+      } else if (replacement?.exhausted) {
+        specifications.push({ type: EVENT_TYPES.STOCK_EXHAUSTED, actionId, payload: { drawOrdinal: ordinal, randomUnit: replacement.randomUnit, effectiveWeights: replacement.effectiveWeights, playerId: draw.turnPlayerId ?? draw.playerId, categoryId: draw.categoryId, levelKey: replacement.levelKey, replacementForEventId: draw.eventId } });
       }
       return specifications;
     });
@@ -241,13 +255,18 @@ function discardQuestion(match, draw) {
 }
 
 function renderSidebar(root, match, events, live, categories) {
-  root.append(node('p', { class: 'eyebrow', text: 'QUESITOS' }));
+  root.append(node('p', { class: 'eyebrow', text: 'MARCADOR' }), node('p', { class: 'turn-banner', text: `Turno actual · ${playerName(live.currentTurnPlayerId)}` }));
   const quesitos = matchQuesitos(match, events);
+  const results = resultEvents(events);
   for (const playerId of match.playerIds) {
     const badges = node('div', { class: 'badges' });
     for (const category of categories) badges.append(node('span', { class: 'badge', text: `${quesitos.get(playerId)?.has(category.categoryId) ? '●' : '○'} ${category.emoji} ${category.label}` }));
-    root.append(node('div', { class: 'quesito-row' }, [node('strong', { text: playerName(playerId) }), badges]));
+    const playerResults = results.filter((event) => event.payload?.playerId === playerId);
+    root.append(node('div', { class: `quesito-row${live.currentTurnPlayerId === playerId ? ' current-turn' : ''}` }, [node('strong', { text: `${playerName(playerId)} · ${playerResults.filter((event) => event.payload.correct).length}✓ ${playerResults.filter((event) => !event.payload.correct).length}✕` }), badges]));
   }
+  const depleted = [];
+  for (const category of categories) for (const levelKey of match.enabledLevelKeys) if (!matchAvailable(match, category.categoryId, events).some((question) => question.levelKey === levelKey)) depleted.push(`${category.label} · ${levelFor(levelKey)?.label ?? levelKey}`);
+  if (depleted.length) root.append(node('div', { class: 'warning stock-alert' }, [node('strong', { text: 'Reposición necesaria' }), node('p', { text: `${depleted.join(' · ')}. Solicítala al desarrollador (ChatGPT Work).` })]));
   const undo = undoCandidate(events);
   const redo = redoCandidate(events);
   root.append(node('hr'), node('div', { class: 'toolbar' }, [node('button', { id: 'undo-action', type: 'button', text: 'Deshacer', disabled: !undo, onclick: () => undoAction(match) }), node('button', { id: 'redo-action', type: 'button', text: 'Rehacer', disabled: !redo, onclick: () => redoAction(match) })]));
@@ -323,7 +342,7 @@ function createMatch(event) {
     if (!validation.ok) throw new Error(validation.errors.join(' '));
     const matchId = nextMatchId();
     const seed = makeMatchSeed({ matchId, playerIds, categoryIds, levelKeys, bankId });
-    const levelWeights = freezeLevelWeights({ questions: model.questions, bankId, categoryIds, enabledLevelKeys: levelKeys });
+    const levelWeights = freezeLevelWeights({ levels: model.levels, categoryIds, enabledLevelKeys: levelKeys });
     const form = new FormData(elements.form);
     const match = { matchId, name: String(form.get('name') || '').trim() || `Partida ${new Date().toLocaleDateString('es-ES')}`, bankId, playerIds, enabledCategoryIds: categoryIds, enabledLevelKeys: levelKeys, rulesVersion: RULES_VERSION, levelWeights, seed, status: 'open', createdAt: new Date().toISOString(), source: 'web', seedOwned: false };
     const participants = playerIds.map((playerId, index) => ({ matchPlayerId: `${matchId}|${playerId}`, matchId, playerId, seatNo: index + 1, active: true, seedOwned: false }));
@@ -338,9 +357,29 @@ function renderStats() {
   elements.stats.replaceChildren();
   const stats = computeStats(model);
   if (!stats.byPlayer.length) { elements.stats.append(node('div', { class: 'empty', text: 'Sin resultados computables.' })); return; }
-  const cards = node('div', { class: 'grid three' });
-  for (const row of stats.byPlayer.sort((a, b) => a.playerId.localeCompare(b.playerId))) cards.append(node('div', { class: 'card' }, [node('p', { class: 'eyebrow', text: playerName(row.playerId) }), node('div', { class: 'kpi', text: pct(row.accuracy) }), node('p', { class: 'muted', text: `${row.matches ?? 0} partidas · ${row.attempts} intentos · ${row.correct} aciertos · ${row.wrong} fallos · ${row.quesitoAttempts} quesitos intentados · ${row.quesitosWon} ganados` })]));
-  elements.stats.append(cards, statsTable('Jugador × categoría', ['Jugador', 'Categoría', 'Intentos', 'Aciertos', 'Fallos', 'Precisión', 'Q. intentados', 'Q. ganados'], stats.byPlayerCategory.map((row) => [playerName(row.playerId), categoryFor(model.matches.find((match) => match.enabledCategoryIds?.includes(row.categoryId))?.bankId, row.categoryId)?.label ?? row.categoryId, row.attempts, row.correct, row.wrong, pct(row.accuracy), row.quesitoAttempts, row.quesitosWon])), statsTable('Jugador × nivel', ['Jugador', 'Nivel', 'Intentos', 'Aciertos', 'Precisión'], stats.byPlayerLevel.map((row) => [playerName(row.playerId), levelFor(row.levelKey)?.label ?? row.levelKey, row.attempts, row.correct, pct(row.accuracy)])), statsTable('Partida × jugador', ['Partida', 'Jugador', 'Intentos', 'Aciertos', 'Precisión', 'Quesitos'], stats.byMatchPlayer.map((row) => [matchById(row.matchId)?.name ?? row.matchId, playerName(row.playerId), row.attempts, row.correct, pct(row.accuracy), row.quesitosWon])), statsTable('Niveles observados vs objetivo', ['Partida', 'Categoría', 'Nivel', 'Observadas', 'Observado', 'Objetivo'], stats.levelDistribution.map((row) => [matchById(row.matchId)?.name ?? row.matchId, row.categoryId, levelFor(row.levelKey)?.label ?? row.levelKey, row.observed, pct(row.observedShare), pct(row.targetShare)])), statsTable(`Evolución temporal · ${stats.discards} descartes`, ['Fecha', 'Jugador', 'Intentos', 'Aciertos'], stats.temporal.map((row) => [row.day, playerName(row.playerId), row.attempts, row.correct])));
+  const categoryLabel = (id) => model.categories.find((category) => category.categoryId === id)?.label ?? id;
+  const ci = (interval) => `IC 95% ${pct(interval.low)}–${pct(interval.high)}`;
+  const summary = node('section', { class: 'card executive-summary' }, [node('p', { class: 'eyebrow', text: 'RESUMEN EJECUTIVO' }), node('h3', { text: 'Lectura rápida' }), node('p', { class: 'muted', text: `Estimaciones binomiales con intervalos de Wilson al 95%. Comparaciones entre jugadores: prueba z bilateral, α = 0,05. ${stats.discards} descartes activos, excluidos de precisión.` })]);
+  const playerCards = node('div', { class: 'grid three compact-grid' });
+  for (const row of stats.byPlayer.sort((a, b) => a.playerId.localeCompare(b.playerId))) playerCards.append(node('article', { class: 'metric-card' }, [node('strong', { text: playerName(row.playerId) }), node('div', { class: 'kpi', text: pct(row.accuracy) }), node('p', { class: 'ci-label', text: ci(row.accuracyCi) }), node('div', { class: 'progress', 'aria-label': `Precisión ${pct(row.accuracy)}` }, node('span', { style: `width:${row.accuracy * 100}%` })), node('p', { class: 'muted', text: `${row.correct}/${row.attempts} aciertos · ${row.matches ?? 0} partidas` }), node('p', { text: `Quesitos: ${row.quesitosWon}/${row.potentialQuesitos} posibles (${pct(row.quesitoOpportunityRate)})` }), node('p', { class: 'ci-label', text: ci(row.quesitoOpportunityCi) })]));
+  summary.append(playerCards, metricPanel('Precisión por categoría', stats.byCategory, (row) => categoryLabel(row.categoryId), ci), metricPanel('Precisión por nivel', stats.byLevel, (row) => levelFor(row.levelKey)?.label ?? row.levelKey, ci));
+  const leaders = stats.significantCategoryLeaders;
+  summary.append(node('div', { class: 'significance-box' }, [node('strong', { text: 'Jugador más preciso por categoría' }), node('p', { class: 'muted', text: leaders.length ? leaders.map((row) => `${categoryLabel(row.categoryId)}: ${playerName(row.playerId)} (p=${row.pValue.toFixed(3)})`).join(' · ') : 'No hay diferencias significativas con los datos actuales; no se proclama ningún líder.' })]));
+  const detail = node('section', { class: 'stats-details' }, [node('h3', { text: 'Análisis completo' })]);
+  detail.append(metricPanel('Jugador × categoría', stats.byPlayerCategory, (row) => `${playerName(row.playerId)} · ${categoryLabel(row.categoryId)}`, ci), metricPanel('Jugador × nivel', stats.byPlayerLevel, (row) => `${playerName(row.playerId)} · ${levelFor(row.levelKey)?.label ?? row.levelKey}`, ci), metricPanel('Partida × jugador', stats.byMatchPlayer, (row) => `${matchById(row.matchId)?.name ?? row.matchId} · ${playerName(row.playerId)}`, ci));
+  const distributions = node('div', { class: 'card stats-card' }, [node('h3', { text: 'Niveles observados vs objetivo' })]);
+  for (const row of stats.levelDistribution) distributions.append(node('div', { class: 'distribution-row' }, [node('strong', { text: `${matchById(row.matchId)?.name ?? row.matchId} · ${categoryLabel(row.categoryId)} · ${levelFor(row.levelKey)?.label ?? row.levelKey}` }), node('div', { class: 'dual-bars' }, [node('span', { style: `width:${row.observedShare * 100}%`, title: `Observado ${pct(row.observedShare)}` }), node('i', { style: `left:${row.targetShare * 100}%`, title: `Objetivo ${pct(row.targetShare)}` })]), node('small', { text: `${row.observed} observadas · ${pct(row.observedShare)} frente a ${pct(row.targetShare)} objetivo` })]));
+  const temporal = node('div', { class: 'card stats-card' }, [node('h3', { text: 'Evolución temporal' })]);
+  for (const row of stats.temporal) temporal.append(node('div', { class: 'timeline-stat' }, [node('span', { text: row.day }), node('strong', { text: playerName(row.playerId) }), node('span', { text: `${row.correct}/${row.attempts} · ${pct(row.attempts ? row.correct / row.attempts : 0)}` })]));
+  detail.append(distributions, temporal);
+  elements.stats.append(summary, detail);
+}
+
+function metricPanel(title, rows, label, ci) {
+  const card = node('div', { class: 'card stats-card metric-panel' }, [node('h3', { text: title })]);
+  if (!rows.length) { card.append(node('p', { class: 'muted', text: 'Sin datos.' })); return card; }
+  for (const row of rows) card.append(node('div', { class: 'metric-row' }, [node('div', {}, [node('strong', { text: label(row) }), node('small', { text: `${row.correct}/${row.attempts} · ${ci(row.accuracyCi)}` })]), node('div', { class: 'metric-value', text: pct(row.accuracy) }), node('div', { class: 'progress' }, node('span', { style: `width:${row.accuracy * 100}%` }))]));
+  return card;
 }
 
 function statsTable(title, headers, rows) {
@@ -364,6 +403,7 @@ async function runDiagnostics() {
   const summary = node('div', { class: result.ok ? 'notice good-notice' : 'warning', text: result.ok ? `Integridad correcta · ${result.summary.questionCount} preguntas · ${result.summary.eventCount} eventos · seed ${result.summary.seedVersion} · schema ${result.summary.schemaVersion}` : `${result.errors.length} incidencias encontradas.` });
   elements.diagnostics.replaceChildren(summary);
   if (!result.ok) elements.diagnostics.append(statsTable('Incidencias', ['Tipo', 'ID', 'Detalle'], result.errors.map((error) => [error.type, error.id, error.detail])));
+  if (result.warnings.length) elements.diagnostics.append(statsTable('Alertas operativas', ['Tipo', 'ID', 'Detalle'], result.warnings.map((warning) => [warning.type, warning.id, warning.detail])));
 }
 
 async function exportBackup() {

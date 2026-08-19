@@ -16,11 +16,11 @@ La aplicación se sirve como archivos estáticos desde GitHub Pages. El navegado
 
 ## Principios de estado
 
-- Las preguntas de la semilla son inmutables durante una partida.
-- El stock se calcula por `match_id`: pregunta activa de seed menos toda pregunta que haya aparecido en un `QUESTION_DRAWN` de esa partida, incluso si luego se deshace un resultado.
+- Los CSV de preguntas son inmutables durante el juego. Un descarte crea una retirada local persistente en la fila IndexedDB correspondiente; una migración conserva esa marca y el reset la elimina.
+- El stock operativo es pregunta activa local menos toda pregunta que haya aparecido en un `QUESTION_DRAWN` de esa partida, incluso si luego se deshace un resultado.
 - Las partidas web nuevas se reconstruyen desde eventos. No dependen de una proyección de intentos susceptible de quedar a medias.
 - El histórico canónico anterior permanece en `attempts-*.csv`; los cambios de una pregunta futura no reescriben sus `category_id` ni `level_key` ya congelados.
-- Todas las operaciones lógicamente atómicas generan sus eventos en una única transacción. Un descarte y su posible sustitución se confirman juntos.
+- Todas las operaciones lógicamente atómicas usan una única transacción. Un descarte, su retirada local y su posible sustitución se confirman juntos.
 
 ## Multidimensionalidad
 

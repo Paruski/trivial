@@ -1,8 +1,8 @@
 export const APP_NAME = 'Trivial';
-export const SCHEMA_VERSION = 6;
-export const EVENT_SCHEMA_VERSION = 1;
-export const RULES_VERSION = 'trivial-rules-2.0.0';
-export const BUILD_VERSION = '2026-08-19.5';
+export const SCHEMA_VERSION = 7;
+export const EVENT_SCHEMA_VERSION = 2;
+export const RULES_VERSION = 'trivial-rules-3.0.0';
+export const BUILD_VERSION = '2026-08-19.6';
 
 export const EVENT_TYPES = Object.freeze({
   MATCH_CREATED: 'MATCH_CREATED',
@@ -10,6 +10,7 @@ export const EVENT_TYPES = Object.freeze({
   ANSWER_REVEALED: 'ANSWER_REVEALED',
   RESULT_RECORDED: 'RESULT_RECORDED',
   QUESTION_DISCARDED: 'QUESTION_DISCARDED',
+  STOCK_EXHAUSTED: 'STOCK_EXHAUSTED',
   MATCH_CLOSED: 'MATCH_CLOSED',
   EVENT_REVERTED: 'EVENT_REVERTED',
   EVENT_RESTORED: 'EVENT_RESTORED',

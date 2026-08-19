@@ -7,15 +7,15 @@ installFileFetch();
 
 const legacyMaxId = { AL: 22, LI: 22, FI: 22, HI: 22, IN: 21, NE: 21 };
 const expectedAddition = {
-  AL: { CUR: 68, AUT: 23, NIC: 9 },
-  LI: { CUR: 73, AUT: 18, NIC: 9 },
-  FI: { CUR: 67, AUT: 19, NIC: 14 },
-  HI: { CUR: 67, AUT: 24, NIC: 9 },
-  IN: { CUR: 74, AUT: 16, NIC: 10 },
-  NE: { CUR: 71, AUT: 19, NIC: 10 },
+  AL: { CUR: 70, AUT: 20, NIC: 10 },
+  LI: { CUR: 70, AUT: 20, NIC: 10 },
+  FI: { CUR: 70, AUT: 20, NIC: 10 },
+  HI: { CUR: 70, AUT: 20, NIC: 10 },
+  IN: { CUR: 70, AUT: 20, NIC: 10 },
+  NE: { CUR: 70, AUT: 20, NIC: 10 },
 };
 
-test('la ampliación añade exactamente 100 preguntas por categoría en la proporción original', async () => {
+test('la ampliación añade exactamente 100 preguntas por categoría con proporción 70/20/10', async () => {
   const seed = await loadSeed();
   for (const [categoryId, expected] of Object.entries(expectedAddition)) {
     const added = seed.questions.filter((question) =>

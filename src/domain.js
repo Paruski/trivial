@@ -35,14 +35,15 @@ export function seenQuestionKeys(events) {
 
 export function deriveLiveState(match, events) {
   const active = getActiveEvents(events);
-  const state = { status: match.status ?? 'open', currentDraw: null, answerRevealed: false, close: null, timeline: active };
+  const state = { status: match.status ?? 'open', currentDraw: null, answerRevealed: false, close: null, timeline: active, currentTurnPlayerId: match.playerIds?.[0] ?? null, lastStockExhaustion: null };
   for (const event of active) {
     switch (event.type) {
       case EVENT_TYPES.QUESTION_DRAWN:
         state.currentDraw = {
           eventId: event.eventId,
           actionId: event.actionId,
-          playerId: event.payload.playerId,
+          playerId: event.payload.playerId ?? event.payload.turnPlayerId,
+          turnPlayerId: event.payload.turnPlayerId ?? event.payload.playerId,
           categoryId: event.payload.categoryId,
           levelKey: event.payload.levelKey,
           questionKey: event.payload.questionKey,
@@ -55,11 +56,23 @@ export function deriveLiveState(match, events) {
         if (state.currentDraw?.eventId === event.payload?.drawEventId) state.answerRevealed = true;
         break;
       case EVENT_TYPES.RESULT_RECORDED:
+        if (match.playerIds?.includes(event.payload?.playerId)) {
+          const index = match.playerIds.indexOf(event.payload.playerId);
+          state.currentTurnPlayerId = event.payload.correct ? event.payload.playerId : match.playerIds[(index + 1) % match.playerIds.length];
+        }
+        if (state.currentDraw?.eventId === event.payload?.drawEventId) {
+          state.currentDraw = null;
+          state.answerRevealed = false;
+        }
+        break;
       case EVENT_TYPES.QUESTION_DISCARDED:
         if (state.currentDraw?.eventId === event.payload?.drawEventId) {
           state.currentDraw = null;
           state.answerRevealed = false;
         }
+        break;
+      case EVENT_TYPES.STOCK_EXHAUSTED:
+        state.lastStockExhaustion = event.payload;
         break;
       case EVENT_TYPES.MATCH_CLOSED:
         state.status = 'closed';
@@ -94,18 +107,13 @@ export function makeMatchSeed({ matchId, playerIds, categoryIds, levelKeys, bank
   return hash32(`${matchId}|${bankId}|${playerIds.join(',')}|${categoryIds.join(',')}|${levelKeys.join(',')}`).toString(16).padStart(8, '0');
 }
 
-export function originalLevelWeightsForCategory({ questions, bankId, categoryId, enabledLevelKeys }) {
-  const enabled = new Set(enabledLevelKeys);
-  const counts = new Map();
-  for (const question of questions) {
-    if (question.bankId !== bankId || question.categoryId !== categoryId || !enabled.has(question.levelKey)) continue;
-    counts.set(question.levelKey, (counts.get(question.levelKey) ?? 0) + 1);
-  }
-  return Object.fromEntries([...counts].sort(([left], [right]) => left.localeCompare(right)));
+export function originalLevelWeightsForCategory({ levels = [], enabledLevelKeys }) {
+  const definitions = new Map(levels.map((level) => [level.levelKey, Number(level.probabilityWeight)]));
+  return Object.fromEntries(enabledLevelKeys.map((levelKey) => [levelKey, definitions.get(levelKey) || 1]));
 }
 
-export function freezeLevelWeights({ questions, bankId, categoryIds, enabledLevelKeys }) {
-  return Object.fromEntries(categoryIds.map((categoryId) => [categoryId, originalLevelWeightsForCategory({ questions, bankId, categoryId, enabledLevelKeys })]));
+export function freezeLevelWeights({ levels = [], categoryIds, enabledLevelKeys }) {
+  return Object.fromEntries(categoryIds.map((categoryId) => [categoryId, originalLevelWeightsForCategory({ levels, enabledLevelKeys })]));
 }
 
 export function availableQuestions({ questions, bankId, categoryId, enabledLevelKeys, seenKeys = new Set() }) {
@@ -126,10 +134,9 @@ export function validateMatchConfiguration({ bankId, playerIds, categoryIds, lev
 }
 
 export function chooseLevelForDraw({ matchSeed, drawOrdinal, categoryId, playerId, enabledLevelKeys, frozenWeights, questions }) {
-  const availableLevels = enabledLevelKeys.filter((levelKey) => questions.some((question) => question.levelKey === levelKey));
-  if (!availableLevels.length) return null;
   const base = frozenWeights?.[categoryId] ?? {};
-  const weighted = availableLevels.map((levelKey) => ({ levelKey, weight: Math.max(0, Number(base[levelKey] ?? 0)) }));
+  const weighted = enabledLevelKeys.map((levelKey) => ({ levelKey, weight: Math.max(0, Number(base[levelKey] ?? 0)) }));
+  if (!weighted.length) return null;
   let total = weighted.reduce((sum, item) => sum + item.weight, 0);
   if (total <= 0) {
     for (const item of weighted) item.weight = 1;
@@ -138,11 +145,11 @@ export function chooseLevelForDraw({ matchSeed, drawOrdinal, categoryId, playerI
   const randomUnit = deterministicUnit(`${matchSeed}|${drawOrdinal}|${playerId}|${categoryId}`);
   let cursor = randomUnit * total;
   for (const item of weighted) {
-    if (cursor < item.weight) return { levelKey: item.levelKey, randomUnit, effectiveWeights: Object.fromEntries(weighted.map(({ levelKey, weight }) => [levelKey, weight])) };
+    if (cursor < item.weight) return { levelKey: item.levelKey, randomUnit, effectiveWeights: Object.fromEntries(weighted.map(({ levelKey, weight }) => [levelKey, weight])), exhausted: !questions.some((question) => question.levelKey === item.levelKey) };
     cursor -= item.weight;
   }
   const last = weighted.at(-1);
-  return { levelKey: last.levelKey, randomUnit, effectiveWeights: Object.fromEntries(weighted.map(({ levelKey, weight }) => [levelKey, weight])) };
+  return { levelKey: last.levelKey, randomUnit, effectiveWeights: Object.fromEntries(weighted.map(({ levelKey, weight }) => [levelKey, weight])), exhausted: !questions.some((question) => question.levelKey === last.levelKey) };
 }
 
 export function stableQuestionCompare(left, right) {
@@ -157,20 +164,15 @@ export function selectQuestionForDraw({ questions, categoryId, playerId, enabled
   const level = chooseLevelForDraw({ questions, categoryId, playerId, enabledLevelKeys, frozenWeights, matchSeed, drawOrdinal });
   if (!level) return null;
   const question = nextQuestionWithinLevel({ questions, levelKey: level.levelKey });
-  return question ? { question, ...level } : null;
+  return { question, ...level, exhausted: !question };
 }
 
 export function selectReplacementQuestion(args) {
-  const sameLevel = nextQuestionWithinLevel({ questions: args.questions, levelKey: args.previousLevelKey });
-  if (sameLevel) {
-    const randomUnit = deterministicUnit(`${args.matchSeed}|${args.drawOrdinal}|${args.playerId}|${args.categoryId}|replacement`);
-    return { question: sameLevel, levelKey: args.previousLevelKey, randomUnit, effectiveWeights: { [args.previousLevelKey]: Number(args.frozenWeights?.[args.categoryId]?.[args.previousLevelKey] ?? 1) } };
-  }
   return selectQuestionForDraw(args);
 }
 
 export function drawOrdinal(events) {
-  return events.filter((event) => event.type === EVENT_TYPES.QUESTION_DRAWN).length + 1;
+  return events.filter((event) => [EVENT_TYPES.QUESTION_DRAWN, EVENT_TYPES.STOCK_EXHAUSTED].includes(event.type)).length + 1;
 }
 
 export function resultEvents(events) {

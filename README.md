@@ -4,7 +4,7 @@ Aplicación estática, autosuficiente y offline para GitHub Pages. No usa backen
 
 ## Jugar
 
-La versión publicada vive en `https://paruski.github.io/trivial/`. Una partida admite entre uno y tres jugadores disponibles y cualquier subconjunto no vacío de categorías y niveles que tenga stock. En cada turno se eligen explícitamente jugador, categoría y si se intenta quesito; el motor elige el nivel y la pregunta.
+La versión publicada vive en `https://paruski.github.io/trivial/`. Una partida admite entre uno y tres jugadores disponibles y cualquier subconjunto no vacío de categorías y niveles que tenga stock. En cada turno se elige categoría y si se intenta quesito; el motor elige el nivel con pesos fijos 70/20/10. Tras mostrar la respuesta se indica qué jugador respondió y si acertó o falló.
 
 ## Desarrollo
 
@@ -36,8 +36,8 @@ python3 -m http.server 4173 --bind 127.0.0.1
 
 ## Versiones canónicas
 
-- `schema_version`: `6`
-- `rules_version`: `trivial-rules-2.0.0`
-- `seed_version`: `2026-08-19.4`
+- `schema_version`: `7`
+- `rules_version`: `trivial-rules-3.0.0`
+- `seed_version`: `2026-08-19.5`
 
 Estas versiones también están en `src/config.js` y `data/meta.csv`. GitHub Actions solo despliega Pages después de validar la semilla, superar las pruebas unitarias y completar el E2E en Chromium.

@@ -3,7 +3,7 @@ import { makeEvent } from './domain.js';
 import { loadSeed } from './seed.js';
 
 const DB_NAME = 'trivial-pages';
-const DB_VERSION = 7;
+const DB_VERSION = 8;
 const META_STORE = 'meta';
 const ALL_STORES = [...DATA_STORES, META_STORE];
 const localQueues = new Map();
@@ -126,7 +126,10 @@ async function reconcileSeed(seed) {
     replaceSeedRows('banks', (row) => row.seedOwned === true || bankIds.has(row.bankId));
     replaceSeedRows('categories', (row) => row.seedOwned === true || bankIds.has(row.bankId));
     replaceSeedRows('levels', (row) => row.seedOwned === true);
-    replaceSeedRows('questions', (row) => row.seedOwned === true || bankIds.has(row.bankId));
+    const localRetirements = new Set(existing.questions.filter((row) => row.retiredLocally === true).map((row) => row.questionKey));
+    const questionStore = transaction.objectStore('questions');
+    for (const row of existing.questions.filter((item) => item.seedOwned === true || bankIds.has(item.bankId))) questionStore.delete(row.questionKey);
+    for (const row of seed.questions) questionStore.put(localRetirements.has(row.questionKey) ? { ...row, status: 'retired', retiredLocally: true } : row);
     replaceSeedRows('players', (row) => row.seedOwned === true);
     replaceSeedRows('matches', (row) => row.seedOwned === true || row.source === 'historical_seed');
     const historicalMatchIds = new Set(seed.matches.map((row) => row.matchId));
@@ -209,6 +212,20 @@ export const db = {
       const events = await appendInTransaction(transaction, matchId, specifications);
       await transactionPromise(transaction);
       channel?.postMessage({ type: 'events-appended', matchId });
+      return events;
+    });
+  },
+  async commitDiscard(matchId, questionKey, specifications) {
+    return withWriteLock(`match:${matchId}`, async () => {
+      const database = await openDatabase();
+      const transaction = database.transaction(['events', 'questions'], 'readwrite');
+      const questionStore = transaction.objectStore('questions');
+      const question = await requestPromise(questionStore.get(questionKey));
+      if (!question) throw new Error(`Pregunta no encontrada: ${questionKey}`);
+      questionStore.put({ ...question, status: 'retired', retiredLocally: true });
+      const events = await appendInTransaction(transaction, matchId, specifications);
+      await transactionPromise(transaction);
+      channel?.postMessage({ type: 'question-discarded', matchId, questionKey });
       return events;
     });
   },

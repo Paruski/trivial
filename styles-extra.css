@@ -11,3 +11,31 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 1rem 0; }
 .good-notice { border-color: #2c6647; color: #baf4d1; }
 body.busy { cursor: progress; }
 body.busy button { pointer-events: none; }
+.category-dot { width: .8rem; height: .8rem; flex: 0 0 .8rem; display: inline-block; border-radius: 50%; background: var(--category-color); box-shadow: 0 0 0 2px rgba(255,255,255,.14); }
+.category-button { display: flex; align-items: center; gap: .5rem; text-align: left; }
+.turn-banner { padding: .65rem .8rem; border: 1px solid var(--accent); border-radius: 10px; color: var(--accent); font-weight: 800; }
+.respondent-picker { display: flex; align-items: center; flex-wrap: wrap; gap: .55rem; margin: 1rem 0; }
+.current-turn { border-left: 3px solid var(--accent); padding-left: .7rem; }
+.stock-alert { margin-top: 1rem; }
+.stock-alert p { margin: .35rem 0 0; }
+.executive-summary { display: grid; gap: 1rem; }
+.compact-grid { margin-top: .25rem; }
+.metric-card { padding: .9rem; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.025); }
+.metric-card p { margin: .45rem 0 0; }
+.ci-label, .metric-row small { color: var(--muted); font-size: .78rem; }
+.metric-panel { box-shadow: none; overflow: visible; }
+.metric-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: .35rem .75rem; padding: .7rem 0; border-top: 1px solid var(--line); }
+.metric-row:first-of-type { border-top: 0; }
+.metric-row small { display: block; margin-top: .15rem; }
+.metric-row .progress { grid-column: 1 / -1; }
+.metric-value { font-weight: 800; font-variant-numeric: tabular-nums; }
+.significance-box { padding: .8rem; border: 1px solid var(--line); border-radius: 12px; }
+.significance-box p { margin: .35rem 0 0; }
+.stats-details { margin-top: 1.5rem; }
+.distribution-row { display: grid; gap: .35rem; padding: .7rem 0; border-top: 1px solid var(--line); }
+.dual-bars { position: relative; height: 9px; border-radius: 999px; background: #0a1020; }
+.dual-bars span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.dual-bars i { position: absolute; top: -3px; width: 2px; height: 15px; background: var(--ok); }
+.distribution-row small { color: var(--muted); }
+.timeline-stat { display: grid; grid-template-columns: minmax(6rem,1fr) minmax(4rem,1fr) auto; gap: .6rem; padding: .6rem 0; border-top: 1px solid var(--line); }
+@media (max-width: 520px) { .timeline-stat { grid-template-columns: 1fr auto; } .timeline-stat span:last-child { grid-column: 1 / -1; } }

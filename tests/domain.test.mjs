@@ -5,10 +5,11 @@ import { powerset } from './helpers.mjs';
 
 const bankId = 'B';
 const levels = ['S|CUR', 'S|AUT', 'S|NIC'];
+const levelDefinitions = levels.map((levelKey, index) => ({ levelKey, probabilityWeight: [70, 20, 10][index] }));
 const categories = ['A', 'B', 'C'];
 const players = ['J1', 'J2', 'J3'];
 const questions = categories.flatMap((categoryId) => levels.flatMap((levelKey, levelIndex) => Array.from({ length: levelIndex + 1 }, (_, index) => ({ bankId, questionId: `${categoryId}-${levelIndex}-${index}`, questionKey: `${bankId}|${categoryId}-${levelIndex}-${index}`, categoryId, levelKey, status: 'active', orderKey: `${bankId}|${categoryId}|${levelIndex}|${String(index).padStart(3, '0')}` }))));
-const match = { matchId: 'M', bankId, playerIds: players, enabledCategoryIds: categories, enabledLevelKeys: levels, seed: 'seed', status: 'open', levelWeights: freezeLevelWeights({ questions, bankId, categoryIds: categories, enabledLevelKeys: levels }) };
+const match = { matchId: 'M', bankId, playerIds: players, enabledCategoryIds: categories, enabledLevelKeys: levels, seed: 'seed', status: 'open', levelWeights: freezeLevelWeights({ levels: levelDefinitions, categoryIds: categories, enabledLevelKeys: levels }) };
 
 function event(seq, type, payload, extra = {}) { return makeEvent({ matchId: 'M', seq, type, payload, timestamp: `2026-08-19T00:00:0${seq}Z`, ...extra }); }
 
@@ -22,10 +23,12 @@ test('acepta todos los subconjuntos no vacíos de categorías y niveles con stoc
   for (const categoryIds of powerset(categories)) for (const levelKeys of powerset(levels)) assert.equal(validateMatchConfiguration({ bankId, playerIds: ['J1'], categoryIds, levelKeys, questions, availablePlayerIds: players }).ok, true, `${categoryIds}/${levelKeys}`);
 });
 
-test('la elección manual de jugador queda congelada y no existe rotación automática', () => {
+test('el turno se congela al sacar y el jugador se comunica con el resultado', () => {
   const pick = selectQuestionForDraw({ questions, categoryId: 'A', playerId: 'J3', enabledLevelKeys: levels, frozenWeights: match.levelWeights, matchSeed: match.seed, drawOrdinal: 1 });
   const drawn = event(1, EVENT_TYPES.QUESTION_DRAWN, { playerId: 'J3', categoryId: 'A', levelKey: pick.levelKey, questionKey: pick.question.questionKey, quesitoAttempt: false, drawOrdinal: 1 });
   assert.equal(deriveLiveState(match, [drawn]).currentDraw.playerId, 'J3');
+  const result = event(2, EVENT_TYPES.RESULT_RECORDED, { drawEventId: drawn.eventId, playerId: 'J1', correct: false });
+  assert.equal(deriveLiveState(match, [drawn, result]).currentTurnPlayerId, 'J2');
 });
 
 test('no permite conceptualmente una segunda pregunta mientras hay una pendiente', () => {
@@ -40,17 +43,20 @@ test('PRNG y sorteo completo son deterministas para semilla e historial iguales'
   assert.deepEqual(selectQuestionForDraw(args), selectQuestionForDraw(args));
 });
 
-test('los pesos se congelan con composición original y no bajan al consumir preguntas', () => {
-  assert.deepEqual(match.levelWeights.A, { 'S|AUT': 2, 'S|CUR': 1, 'S|NIC': 3 });
+test('los pesos 70/20/10 se congelan y no bajan al consumir preguntas', () => {
+  assert.deepEqual(match.levelWeights.A, { 'S|CUR': 70, 'S|AUT': 20, 'S|NIC': 10 });
   const available = questions.filter((question) => question.categoryId === 'A' && question.questionKey !== 'B|A-2-0');
   const choice = chooseLevelForDraw({ matchSeed: 'z', drawOrdinal: 4, playerId: 'J1', categoryId: 'A', enabledLevelKeys: levels, frozenWeights: match.levelWeights, questions: available });
-  assert.deepEqual(choice.effectiveWeights, { 'S|CUR': 1, 'S|AUT': 2, 'S|NIC': 3 });
+  assert.deepEqual(choice.effectiveWeights, { 'S|CUR': 70, 'S|AUT': 20, 'S|NIC': 10 });
 });
 
-test('un nivel agotado se excluye y conserva la proporción de los restantes', () => {
+test('un nivel agotado se alerta sin renormalizar los pesos', () => {
   const available = questions.filter((question) => question.categoryId === 'A' && question.levelKey !== 'S|AUT');
-  const choice = chooseLevelForDraw({ matchSeed: 'z', drawOrdinal: 4, playerId: 'J1', categoryId: 'A', enabledLevelKeys: levels, frozenWeights: match.levelWeights, questions: available });
-  assert.deepEqual(choice.effectiveWeights, { 'S|CUR': 1, 'S|NIC': 3 });
+  let choice;
+  for (let drawOrdinal = 1; drawOrdinal < 100 && !choice?.exhausted; drawOrdinal += 1) choice = chooseLevelForDraw({ matchSeed: 'z', drawOrdinal, playerId: 'J1', categoryId: 'A', enabledLevelKeys: levels, frozenWeights: match.levelWeights, questions: available });
+  assert.equal(choice.exhausted, true);
+  assert.equal(choice.levelKey, 'S|AUT');
+  assert.deepEqual(choice.effectiveWeights, { 'S|CUR': 70, 'S|AUT': 20, 'S|NIC': 10 });
 });
 
 test('dentro del nivel se elige el menor order_key estable', () => {
@@ -65,10 +71,11 @@ test('quesito solo se concede en intento acertado y nunca se duplica', () => {
   assert.equal(quesitosByPlayer(results).get('J1').size, 1);
 });
 
-test('el descarte elige sustitución del mismo nivel antes de sortear otro', () => {
+test('el descarte aplica de nuevo el sorteo fijo y determinista', () => {
   const pool = questions.filter((question) => question.categoryId === 'A');
   const replacement = selectReplacementQuestion({ questions: pool, previousLevelKey: 'S|AUT', categoryId: 'A', playerId: 'J1', enabledLevelKeys: levels, frozenWeights: match.levelWeights, matchSeed: 'x', drawOrdinal: 2 });
-  assert.equal(replacement.levelKey, 'S|AUT');
+  assert.deepEqual(replacement, selectReplacementQuestion({ questions: pool, previousLevelKey: 'S|AUT', categoryId: 'A', playerId: 'J1', enabledLevelKeys: levels, frozenWeights: match.levelWeights, matchSeed: 'x', drawOrdinal: 2 }));
+  assert.deepEqual(replacement.effectiveWeights, { 'S|CUR': 70, 'S|AUT': 20, 'S|NIC': 10 });
 });
 
 test('undo/redo semántico restaura la proyección sin devolver vistas al pool', () => {

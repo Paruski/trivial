@@ -1,4 +1,4 @@
-"level_key","scale_id","level_id_local","label","order","description"
-"S_DIFICULTAD_TRIVIAL_V1|CUR","S_DIFICULTAD_TRIVIAL_V1","CUR","curricular","1","Conocimiento curricular/general."
-"S_DIFICULTAD_TRIVIAL_V1|AUT","S_DIFICULTAD_TRIVIAL_V1","AUT","autodidacta","2","Conocimiento normalmente adquirido fuera del currículo básico."
-"S_DIFICULTAD_TRIVIAL_V1|NIC","S_DIFICULTAD_TRIVIAL_V1","NIC","nicho","3","Conocimiento especializado o poco frecuente."
+"level_key","scale_id","level_id_local","label","order","probability_weight","description"
+"S_DIFICULTAD_TRIVIAL_V1|CUR","S_DIFICULTAD_TRIVIAL_V1","CUR","curricular","1","70","Conocimiento enseñado en la educación obligatoria en España, al menos desde la década de 1970."
+"S_DIFICULTAD_TRIVIAL_V1|AUT","S_DIFICULTAD_TRIVIAL_V1","AUT","autodidacta","2","20","Conocimiento fuera del currículo obligatorio, fácilmente localizable y aprendible por una persona curiosa."
+"S_DIFICULTAD_TRIVIAL_V1|NIC","S_DIFICULTAD_TRIVIAL_V1","NIC","nicho","3","10","Conocimiento que requiere formación profunda, equivalente a un buen nivel de grado en la materia."
