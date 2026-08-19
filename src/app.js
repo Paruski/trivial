@@ -397,6 +397,9 @@ window.addEventListener('error', (event) => { console.error(event.error ?? event
 try {
   await db.init();
   await refresh();
+  for (const control of [elements.newButton, elements.exportBackup, elements.importBackup, elements.reset, elements.runDiagnostics]) control.disabled = false;
+  document.body.dataset.ready = 'true';
+  document.body.setAttribute('aria-busy', 'false');
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn);
 } catch (error) {
   console.error(error);

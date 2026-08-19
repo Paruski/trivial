@@ -3,7 +3,9 @@ import { test, expect } from '@playwright/test';
 test('flujo real multijugador, descarte, undo/redo, persistencia y segunda pestaña', async ({ page, context }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Partida', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Nueva partida' }).click();
+  const newMatch = page.getByRole('button', { name: 'Nueva partida' });
+  await expect(newMatch).toBeEnabled();
+  await newMatch.click();
   await page.locator('input[name="player"][value="J1"]').check();
   await page.locator('input[name="player"][value="J3"]').check();
   for (const input of await page.locator('input[name="category"]').all()) if (!['AL', 'IN'].includes(await input.getAttribute('value'))) await input.uncheck();
