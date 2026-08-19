@@ -57,8 +57,7 @@ export function deriveLiveState(match, events) {
         break;
       case EVENT_TYPES.RESULT_RECORDED:
         if (match.playerIds?.includes(event.payload?.playerId)) {
-          const index = match.playerIds.indexOf(event.payload.playerId);
-          state.currentTurnPlayerId = event.payload.correct ? event.payload.playerId : match.playerIds[(index + 1) % match.playerIds.length];
+          state.currentTurnPlayerId = event.payload.playerId;
         }
         if (state.currentDraw?.eventId === event.payload?.drawEventId) {
           state.currentDraw = null;

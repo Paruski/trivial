@@ -10,7 +10,7 @@ Se elige un banco, entre uno y tres jugadores disponibles, al menos una categor�
 
 ## Turno
 
-El marcador siempre muestra el turno actual. El primer turno corresponde al primer jugador configurado; un acierto conserva el turno y un fallo lo pasa al siguiente jugador en el orden congelado. El jugador que realmente respondió se indica al comunicar el resultado, por lo que puede diferir del turno nominal. Sin una pregunta pendiente, la interfaz exige:
+El marcador siempre muestra el turno actual y no existe rotación automática. El primer turno corresponde al primer jugador configurado. El jugador que realmente respondió se indica al comunicar el resultado y pasa a ser el turno visible siguiente tanto si acertó como si falló; la aplicación nunca elige por sí sola a otra persona. Sin una pregunta pendiente, la interfaz exige:
 
 1. categoría;
 2. indicación de intento de quesito;

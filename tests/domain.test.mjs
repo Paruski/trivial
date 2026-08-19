@@ -28,7 +28,7 @@ test('el turno se congela al sacar y el jugador se comunica con el resultado', (
   const drawn = event(1, EVENT_TYPES.QUESTION_DRAWN, { playerId: 'J3', categoryId: 'A', levelKey: pick.levelKey, questionKey: pick.question.questionKey, quesitoAttempt: false, drawOrdinal: 1 });
   assert.equal(deriveLiveState(match, [drawn]).currentDraw.playerId, 'J3');
   const result = event(2, EVENT_TYPES.RESULT_RECORDED, { drawEventId: drawn.eventId, playerId: 'J1', correct: false });
-  assert.equal(deriveLiveState(match, [drawn, result]).currentTurnPlayerId, 'J2');
+  assert.equal(deriveLiveState(match, [drawn, result]).currentTurnPlayerId, 'J1');
 });
 
 test('no permite conceptualmente una segunda pregunta mientras hay una pendiente', () => {
