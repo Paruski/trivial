@@ -1,4 +1,4 @@
-const CACHE = 'trivial-pages-build-2026-08-19.3-seed-2026-08-19.3';
+const CACHE = 'trivial-pages-build-2026-08-19.4-seed-2026-08-19.4';
 const ASSETS = [
   './','./index.html','./styles.css','./styles-extra.css','./manifest.webmanifest','./icons/trivial.svg',
   './src/app.js','./src/config.js','./src/db.js','./src/domain.js','./src/csv.js','./src/seed.js','./src/backup.js','./src/diagnostics.js','./src/stats.js','./src/import-export.js',

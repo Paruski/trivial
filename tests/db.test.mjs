@@ -50,6 +50,6 @@ test('IndexedDB: migraci√≥n, atomicidad, idempotencia, concurrencia, recuperaci√
 
   await db.resetToSeed();
   assert.equal(await db.get('matches', match.matchId), undefined);
-  assert.equal((await db.getAll('questions')).length, 126);
-  assert.equal((await db.get('meta', 'seedVersion')).value, '2026-08-19.3');
+  assert.equal((await db.getAll('questions')).length, 726);
+  assert.equal((await db.get('meta', 'seedVersion')).value, '2026-08-19.4');
 });

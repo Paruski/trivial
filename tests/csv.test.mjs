@@ -29,8 +29,8 @@ test('la semilla canónica completa pasa IDs, FKs, duplicados, obligatorios y co
   const seed = await loadSeed();
   const result = validateSeed(seed);
   assert.equal(result.ok, true, JSON.stringify(result.errors));
-  assert.equal(result.counts.questions, 126);
-  assert.equal(new Set(seed.questions.map((question) => question.questionKey)).size, 126);
+  assert.equal(result.counts.questions, 726);
+  assert.equal(new Set(seed.questions.map((question) => question.questionKey)).size, 726);
   assert.equal(seed.questions.some((question) => question.status === 'discarded'), false);
   assert.equal(seed.questions.every((question) => question.questionKey === `${question.bankId}|${question.questionId}` && question.orderKey), true);
 });

@@ -38,6 +38,6 @@ python3 -m http.server 4173 --bind 127.0.0.1
 
 - `schema_version`: `6`
 - `rules_version`: `trivial-rules-2.0.0`
-- `seed_version`: `2026-08-19.3`
+- `seed_version`: `2026-08-19.4`
 
 Estas versiones también están en `src/config.js` y `data/meta.csv`. GitHub Actions solo despliega Pages después de validar la semilla, superar las pruebas unitarias y completar el E2E en Chromium.
