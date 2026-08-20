@@ -1,13 +1,17 @@
-# Pruebas y CI/CD
+# Pruebas y CI
 
-`npm test` valida los CSV y ejecuta pruebas Node sin red. Cubren combinaciones de jugadores, subconjuntos de categorías/niveles, turno y jugador comunicado, congelación, PRNG, pesos 70/20/10, agotamiento sin renormalización, orden, quesitos, descartes persistentes, replay, undo/redo, idempotencia, inferencia estadística, copias y diagnóstico.
+`npm test` ejecuta validación CSV, tests JavaScript del banco y tests Python del servidor. La suite cubre:
 
-`npm run test:e2e` usa Chromium real. El caso crea J1+J3, configura categorías/niveles, juega explícitamente con J3 y J1, registra acierto y fallo de quesito, descarta con sustitución, hace undo/redo, recarga, verifica persistencia, abre otra pestaña, cierra y revisa estadísticas.
+- UTF-8, CRLF, RFC 4180, columnas, FKs, IDs y duplicados;
+- las siete combinaciones posibles de uno a tres jugadores;
+- todos los subconjuntos no vacíos de categorías y niveles;
+- turno manual, congelación, segunda pregunta pendiente y PRNG;
+- pesos estables, nivel agotado y orden estable;
+- quesitos, descartes, sustitución, undo/redo y replay;
+- idempotencia, rollback, escrituras concurrentes y secuencias;
+- migración de semilla conservando partidas;
+- backup, importación, reset, diagnóstico y estadística.
 
-GitHub Actions tiene tres compuertas:
+`npm run test:e2e` inicia el servidor real y usa Chromium para crear una partida J1+J3, elegir manualmente J3, responder, intentar quesito con J1, descartar antes de revelar, comprobar sustitución, deshacer, rehacer, recargar, abrir otra pestaña, cerrar y revisar estadísticas.
 
-1. `test`: `npm ci` y `npm test`;
-2. `e2e`: instala Chromium y ejecuta Playwright;
-3. `deploy`: publica el checkout estático en Pages solo si las dos anteriores pasan.
-
-Un informe Playwright se conserva como artefacto durante siete días si falla el E2E.
+GitHub Actions ejecuta tests, E2E en la imagen oficial de Playwright, construcción del contenedor y generación del ZIP. Ningún artefacto se publica si falla una fase requerida.

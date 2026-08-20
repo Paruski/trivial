@@ -2,30 +2,36 @@
 
 ## Protocolo
 
-1. Copiar `templates/question-bank.csv` o editar el archivo de preguntas del banco actual.
-2. Reservar un `question_id` nuevo que nunca haya sido usado. No recuperar IDs desde Git ni reutilizar eliminados.
-3. Construir `question_key` como `bank_id|question_id`.
-4. Usar una categoría existente del mismo banco y un `level_key` existente.
-5. Escribir enunciado, respuesta principal breve, explicación breve, `status=active`, `random_order` y un `order_key` estable.
-6. Ejecutar `node scripts/normalize-data.mjs` para normalizar comillas y CRLF.
+1. Elegir banco, categoría y nivel conforme a su definición.
+2. Reservar un `question_id` nuevo; nunca reciclar uno retirado o eliminado.
+3. Construir `question_key` con `bank_id|question_id`.
+4. Redactar pregunta, respuesta principal y explicación.
+5. Asignar `status=active`, `random_order` nuevo y `order_key` estable sin alterar filas anteriores.
+6. Añadir la fila al final del CSV de su categoría.
 7. Actualizar `question_count` y `seed_version`.
-8. Ejecutar `npm test` y el E2E.
+8. Ejecutar `npm test`.
+9. Someter el contenido a revisión humana antes de desplegar.
+
+La plantilla está en `templates/question-bank.csv`.
 
 ## Criterios editoriales
 
-- una respuesta principal clara y verificable;
-- enunciado autocontenido y preciso;
-- sin trampas artificiales ni respuesta revelada en el propio enunciado;
-- explicación breve que justifique la respuesta;
-- evitar dependencia temporal innecesaria;
-- revisar duplicados semánticos además del detector exacto.
+- Una respuesta principal clara, breve y verificable.
+- Enunciado autocontenido, concreto y sin trampas artificiales.
+- Sin pistas que revelen la respuesta.
+- Explicación breve que añada contexto.
+- Evitar dependencia temporal salvo que una fecha de corte sea parte explícita.
+- Evitar ambigüedad geográfica, terminológica o de edición.
+- Revisar factualidad y dificultad por una segunda persona.
 
-La escala actual contiene `CUR` (curricular: enseñado en la educación obligatoria española, al menos desde los años setenta), `AUT` (fuera del currículo general pero fácilmente aprendible por curiosidad) y `NIC` (requiere formación profunda, de buen nivel universitario). Las ampliaciones se auditan con reparto 70/20/10 por categoría. El motor lee claves y pesos desde `levels.csv`: no depende de esos IDs ni de que sean tres.
+## Niveles vigentes
 
-Las preguntas deben tener estilo Trivial: cultura general conocible, formulación concreta y no ambigua, sin convertir terminología excesivamente especializada en dificultad artificial. La revisión editorial debe contrastar enunciado, respuesta y explicación, y reclasificar el nivel cuando la formación necesaria no coincida con su definición.
+- `CUR`: contenido enseñado desde al menos los años setenta en la educación obligatoria española.
+- `AUT`: fuera del currículo obligatorio general, pero fácilmente localizable y aprendible por una persona curiosa.
+- `NIC`: exige formación profunda, aproximadamente nivel de graduado en la materia con buen dominio.
 
-## Orden estable
+El motor admite otras escalas y cualquier número de niveles.
 
-Las preguntas se sirven por menor `order_key` dentro del nivel. El patrón actual es `bank_id|random_order` con relleno a seis cifras `|question_id`. Añadir una fila puede ocupar una posición nueva, pero jamás debe cambiar el `order_key` de preguntas antiguas ni su orden relativo.
+## CSV
 
-Cambiar categoría o nivel de una pregunta solo afecta partidas futuras: eventos e intentos históricos conservan sus snapshots.
+UTF-8 estricto, sin BOM, coma, comillas dobles, CRLF y cabeceras ASCII `snake_case`. El validador comprueba estructura, obligatorios, claves, FKs, IDs, estados, `question_count`, duplicados de enunciado y `order_key`, interrogación, longitudes y ausencia literal de la respuesta en el enunciado. Los límites son 220 caracteres para pregunta, 120 para respuesta y 300 para explicación.

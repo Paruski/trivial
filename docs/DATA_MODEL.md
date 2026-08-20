@@ -1,33 +1,37 @@
-# Modelo de datos, CSV y migraciones
+# Modelo de datos y migraciones
 
-## Claves
+## Identidades
 
 - `question_key = bank_id + "|" + question_id`
-- `level_key = scale_id + "|" + level_id_local`
 - `category_key = bank_id + "|" + category_id`
+- `level_key = scale_id + "|" + level_id_local`
+- `(match_id, seq)` identifica la posición de un evento.
 
-Los IDs se tratan como opacos. No deben reciclarse tras eliminar una fila.
+Los IDs son opacos y no se reutilizan. Los eventos congelan categoría, nivel, jugador y una copia de pregunta, respuesta y explicación para que una edición futura del banco no reescriba una partida.
 
-## Semilla CSV
+## Tablas SQLite
 
-Todos los archivos de `data/` son UTF-8 sin BOM, coma, comillas dobles, CRLF y estructura RFC 4180. Las cabeceras son ASCII `snake_case`. JSON aparece únicamente dentro del campo citado `level_weights_json` de una partida histórica o como payload citado de eventos y copias; no existe una segunda semilla JSON.
+- Catálogo: `banks`, `categories`, `levels`, `questions`, `players`.
+- Juego: `matches`, `participants`, `events`.
+- Histórico importado: `historical_attempts`.
+- Operación: `question_retirements`, `sessions`, `api_requests`, `runtime_meta`.
 
-Tablas: bancos, categorías por banco, niveles por escala, preguntas, jugadores, partidas históricas, participantes, intentos históricos, exposiciones y eventos históricos. Cada nivel declara un `probability_weight` positivo; la escala vigente usa 70/20/10. Las preguntas pueden dividirse físicamente en varios CSV sin cambiar la identidad lógica del banco.
+`events` impone unicidad en `event_id`, `(match_id, seq)` e `idempotency_key`. `question_retirements` impone una sola retirada global por pregunta.
 
-`npm run validate:data` comprueba decodificación, estructura, columnas, obligatorios, claves construidas, IDs, FKs, duplicados exactos de enunciado, estados y `question_count`.
+## Migración de semilla
 
-## Eventos
+El servidor calcula SHA-256 sobre nombre y bytes de todos los CSV cada cinco segundos. Si cambia:
 
-Cada evento tiene `event_id`, `match_id`, `seq`, `timestamp`, `type`, `schema_version`, `action_id`, `idempotency_key` opcional y `payload`. `(match_id, seq)` e `idempotency_key` son índices únicos. Tipos mínimos: `MATCH_CREATED`, `QUESTION_DRAWN`, `ANSWER_REVEALED`, `RESULT_RECORDED`, `QUESTION_DISCARDED`, `MATCH_CLOSED`, `EVENT_REVERTED` y `EVENT_RESTORED`. `STOCK_EXHAUSTED` audita sorteos que alcanzan un nivel sin stock sin renormalizar probabilidades.
+1. decodifica y valida el conjunto completo fuera de la transacción;
+2. abre `BEGIN IMMEDIATE`;
+3. reemplaza catálogos e histórico propiedad de la semilla;
+4. conserva partidas, participantes y eventos creados en la web;
+5. elimina retiradas cuyo `question_key` ya no exista;
+6. actualiza `seed_version`, digest y revisión;
+7. confirma de forma atómica.
 
-## Migraciones
+Una semilla inválida se rechaza y la base anterior sigue operativa. Diagnóstico y `/api/health` muestran el error.
 
-IndexedDB usa una versión técnica independiente de `schema_version`. Al abrir:
+## Schema técnico
 
-1. crea o actualiza stores e índices;
-2. normaliza eventos locales del esquema anterior (`ts` a `timestamp` y versión del evento);
-3. carga y valida todos los CSV;
-4. si cambió `seed_version`, sustituye filas propiedad de la semilla, conserva partidas/eventos locales y vuelve a aplicar las retiradas locales de preguntas comprometidas;
-5. elimina de la propiedad de seed filas que ya no aparecen, sin mantener listas permanentes de IDs eliminados.
-
-`Restaurar base original` borra el estado local completo y carga exactamente los CSV presentes. Nunca consulta el historial Git.
+`PRAGMA user_version=8` identifica la primera versión SQLite del servidor. Una base con versión desconocida se rechaza antes de servir para evitar una migración destructiva o implícita. Las futuras versiones deben añadir una migración explícita y mantener los backups JSON del esquema anterior como fixture de prueba.

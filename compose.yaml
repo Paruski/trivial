@@ -1,0 +1,14 @@
+services:
+  trivial:
+    build: .
+    restart: unless-stopped
+    environment:
+      TRIVIAL_ADMIN_TOKEN: ${TRIVIAL_ADMIN_TOKEN:?Define TRIVIAL_ADMIN_TOKEN in .env}
+      TRIVIAL_SECURE_COOKIE: ${TRIVIAL_SECURE_COOKIE:-true}
+    ports:
+      - "127.0.0.1:${TRIVIAL_PORT:-8080}:8080"
+    volumes:
+      - trivial-data:/app/var
+
+volumes:
+  trivial-data:

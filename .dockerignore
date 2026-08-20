@@ -1,0 +1,10 @@
+.env
+.git
+.github
+__pycache__
+*.pyc
+dist
+node_modules
+playwright-report
+test-results
+var

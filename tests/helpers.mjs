@@ -11,7 +11,3 @@ export function installFileFetch() {
     catch { return new Response('', { status: 404 }); }
   };
 }
-
-export function powerset(values) {
-  return Array.from({ length: 2 ** values.length - 1 }, (_, index) => index + 1).map((mask) => values.filter((_, index) => mask & (1 << index)));
-}

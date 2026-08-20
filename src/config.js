@@ -1,20 +1,6 @@
-export const APP_NAME = 'Trivial';
-export const SCHEMA_VERSION = 7;
-export const EVENT_SCHEMA_VERSION = 2;
-export const RULES_VERSION = 'trivial-rules-3.0.0';
-export const BUILD_VERSION = '2026-08-19.7';
-
-export const EVENT_TYPES = Object.freeze({
-  MATCH_CREATED: 'MATCH_CREATED',
-  QUESTION_DRAWN: 'QUESTION_DRAWN',
-  ANSWER_REVEALED: 'ANSWER_REVEALED',
-  RESULT_RECORDED: 'RESULT_RECORDED',
-  QUESTION_DISCARDED: 'QUESTION_DISCARDED',
-  STOCK_EXHAUSTED: 'STOCK_EXHAUSTED',
-  MATCH_CLOSED: 'MATCH_CLOSED',
-  EVENT_REVERTED: 'EVENT_REVERTED',
-  EVENT_RESTORED: 'EVENT_RESTORED',
-});
+export const SCHEMA_VERSION = 8;
+export const EVENT_SCHEMA_VERSION = 3;
+export const RULES_VERSION = 'trivial-rules-4.0.0';
 
 export const SEED_FILES = Object.freeze({
   meta: ['./data/meta.csv'],
@@ -29,8 +15,3 @@ export const SEED_FILES = Object.freeze({
   exposures: ['./data/exposures.csv'],
   events: ['./data/events.csv'],
 });
-
-export const DATA_STORES = Object.freeze([
-  'banks', 'categories', 'levels', 'questions', 'players', 'matches',
-  'participants', 'attempts', 'exposures', 'events',
-]);

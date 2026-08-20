@@ -67,6 +67,9 @@ export function validateSeed(seed) {
     if (row.categoryKey !== `${row.bankId}|${row.categoryId}`) add('KEY', row.categoryKey, 'category_key debe ser bank_id|category_id');
   }
   const prompts = new Map();
+  const orderKeys = new Set();
+  const answerStopwords = new Set(['a', 'de', 'del', 'el', 'en', 'la', 'las', 'los', 'o', 'para', 'por', 'un', 'una', 'y']);
+  const normalize = (value) => value.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('es').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
   for (const row of seed.questions) {
     for (const field of ['bankId', 'questionId', 'questionKey', 'categoryId', 'levelKey', 'prompt', 'answer', 'explanation', 'status', 'orderKey']) if (!String(row[field] ?? '').trim()) add('REQUIRED', row.questionKey || row.questionId, field);
     if (row.questionKey !== `${row.bankId}|${row.questionId}`) add('KEY', row.questionKey, 'question_key debe ser bank_id|question_id');
@@ -74,9 +77,15 @@ export function validateSeed(seed) {
     if (!categoryKeys.has(`${row.bankId}|${row.categoryId}`)) add('FK', row.questionKey, `category_id ${row.categoryId}`);
     if (!levelKeys.has(row.levelKey)) add('FK', row.questionKey, `level_key ${row.levelKey}`);
     if (!['active', 'retired'].includes(row.status)) add('STATUS', row.questionKey, row.status);
+    if (!row.prompt.endsWith('?') || row.prompt.length > 220 || row.answer.length > 120 || row.explanation.length > 300) add('EDITORIAL_FORMAT', row.questionKey, 'longitud o interrogación inválida');
     const normalized = `${row.bankId}|${row.prompt.trim().toLocaleLowerCase('es')}`;
     if (prompts.has(normalized)) add('DUPLICATE_PROMPT', row.questionKey, `También ${prompts.get(normalized)}`);
     else prompts.set(normalized, row.questionKey);
+    const answerPhrase = normalize(row.answer).split(' ').filter((word) => !answerStopwords.has(word)).join(' ');
+    if (answerPhrase.length >= 4 && normalize(row.prompt).includes(answerPhrase)) add('ANSWER_LEAK', row.questionKey, 'La respuesta aparece en el enunciado');
+    const orderIdentity = `${row.bankId}|${row.orderKey}`;
+    if (orderKeys.has(orderIdentity)) add('DUPLICATE_ORDER', row.questionKey, row.orderKey);
+    orderKeys.add(orderIdentity);
   }
   for (const bank of seed.banks) {
     const actual = seed.questions.filter((row) => row.bankId === bank.bankId).length;

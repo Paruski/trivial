@@ -1,27 +1,31 @@
 # Arquitectura
 
-## Límites
+## Componentes
 
-La aplicación se sirve como archivos estáticos desde GitHub Pages. El navegador descarga HTML, CSS, módulos JavaScript y CSV; todo el juego sucede localmente. No existe una ruta de red de juego ni una dependencia de servicios externos.
+1. `data/*.csv`: semilla canónica, versionada y legible.
+2. `server/seed.py`: decodificación, validación y hash de la semilla.
+3. `server/storage.py`: esquema SQLite, WAL, transacciones, sesiones y reconciliación.
+4. `server/domain.py`: reglas autoritativas, PRNG, replay y acciones.
+5. `server/statistics.py`: proyecciones e inferencia estadística.
+6. `server/maintenance.py`: diagnóstico, backup, restauración y reset.
+7. `server/api.py`: HTTP, API JSON, seguridad, estáticos y vigilancia de CSV.
+8. `src/`: cliente sin persistencia canónica.
+9. `sw.js`: caché del shell; nunca cachea `/api/`.
 
-## Capas
+## Fuente de verdad
 
-1. `data/*.csv`: semilla canónica limpia. No contiene tombstones de preguntas eliminadas ni anotaciones de rectificaciones resueltas.
-2. `src/csv.js` y `src/seed.js`: decodificación estricta, mapeo y validación de semilla.
-3. `src/domain.js`: reglas puras, replay, PRNG, pesos, stock, quesitos y undo/redo.
-4. `src/db.js`: IndexedDB, migraciones, transacciones atómicas, Web Locks y BroadcastChannel.
-5. `src/stats.js`, `src/diagnostics.js` y `src/backup.js`: proyecciones derivadas, integridad y transporte del estado.
-6. `src/app.js`: interfaz; no contiene decisiones aleatorias propias.
-7. `sw.js`: caché offline versionada conjuntamente por build y seed.
+Los catálogos y preguntas nacen en CSV. El estado operativo vive en SQLite. Una retirada se guarda en `question_retirements`, por lo que no modifica silenciosamente la semilla. Al cambiar cualquier CSV, el servidor valida el conjunto completo y lo aplica en una transacción; conserva partidas y eventos web, y vuelve a superponer las retiradas globales.
 
-## Principios de estado
+El navegador mantiene únicamente estado efímero de interfaz y una cookie aleatoria HttpOnly. Si pierde la conexión puede abrir el shell cacheado, pero no inventa ni encola jugadas: una escritura solo se confirma cuando SQLite la acepta.
 
-- Los CSV de preguntas son inmutables durante el juego. Un descarte crea una retirada local persistente en la fila IndexedDB correspondiente; una migración conserva esa marca y el reset la elimina.
-- El stock operativo es pregunta activa local menos toda pregunta que haya aparecido en un `QUESTION_DRAWN` de esa partida, incluso si luego se deshace un resultado.
-- Las partidas web nuevas se reconstruyen desde eventos. No dependen de una proyección de intentos susceptible de quedar a medias.
-- El histórico canónico anterior permanece en `attempts-*.csv`; los cambios de una pregunta futura no reescriben sus `category_id` ni `level_key` ya congelados.
-- Todas las operaciones lógicamente atómicas usan una única transacción. Un descarte, su retirada local y su posible sustitución se confirman juntos.
+## Concurrencia y recuperación
 
-## Multidimensionalidad
+SQLite usa WAL, claves únicas y `BEGIN IMMEDIATE`. El proceso HTTP atiende en hilos y serializa las secciones de escritura. Estadísticas, bootstrap y copias leen snapshots transaccionales coherentes. Cada llamada mutadora exige una clave de idempotencia permanente y acotada a sesión y recurso; `api_requests` devuelve la primera respuesta ante reintentos. Un fallo antes del commit revierte toda la operación.
 
-El motor no presupone IDs concretos, seis categorías ni tres niveles. `bank_id` selecciona el banco; las categorías se relacionan por `category_key`; `level_key` incorpora su escala; jugadores, categorías y niveles se recorren desde datos. La restricción de uno a tres jugadores es una regla de creación, no una codificación de J1/J2/J3.
+Al iniciar, el servidor ejecuta las comprobaciones de integridad y FKs y reconstruye desde eventos el estado proyectado de las partidas web. Las inconsistencias de proyección reparables no requieren intervención manual.
+
+Las partidas pertenecen a la sesión que las crea. Otras sesiones pueden verlas, pero no mutarlas. Las operaciones globales requieren `TRIVIAL_ADMIN_TOKEN`.
+
+## Despliegue
+
+El proceso se ejecuta una sola vez por base SQLite, detrás de un proxy HTTPS. El proxy debe preservar `Host` y enviar `X-Forwarded-Proto: https`. El volumen `var/` debe ser persistente y escribible por el UID del contenedor.

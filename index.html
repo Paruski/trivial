@@ -1,30 +1,91 @@
 <!doctype html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#111827" />
-  <meta name="description" content="Trivial estático, reproducible, offline y autosuficiente." />
-  <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css" />
-  <link rel="stylesheet" href="styles-extra.css" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#101827">
+  <meta name="description" content="Trivial multijugador con banco integrado y persistencia central.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/trivial.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
   <title>Trivial</title>
 </head>
-<body aria-busy="true" data-ready="false">
+<body aria-busy="true">
   <header class="app-header">
-    <div><p class="eyebrow">TRIVIAL</p><h1>Partidas reproducibles y base integrada</h1></div>
+    <a class="brand" href="#partida" aria-label="Trivial, inicio"><span class="brand-mark">T</span><span><small>TRIVIAL</small><strong>Partidas con memoria</strong></span></a>
+    <div id="connection-status" class="connection" role="status"><span></span>Conectando</div>
     <nav class="tabs" aria-label="Secciones">
-      <button data-view="game" class="tab active">Partida</button><button data-view="stats" class="tab">Estadísticas</button><button data-view="base" class="tab">Base</button><button data-view="diagnostics" class="tab">Diagnóstico</button><button data-view="backup" class="tab">Copias</button>
+      <button data-view="game" class="tab active">Partida</button>
+      <button data-view="stats" class="tab">Estadísticas</button>
+      <button data-view="base" class="tab">Banco</button>
+      <button data-view="diagnostics" class="tab">Diagnóstico</button>
+      <button data-view="backup" class="tab">Copias</button>
+      <button data-view="help" class="tab">Cómo jugar</button>
     </nav>
   </header>
   <main>
-    <section id="view-game" class="view active"><div class="section-head"><div><p class="eyebrow">JUEGO</p><h2>Partida</h2></div><div class="actions"><button id="new-match-btn" class="primary" disabled>Nueva partida</button><select id="match-picker" aria-label="Cambiar partida" disabled></select></div></div><div id="game-root"><div class="empty">Cargando banco de preguntas…</div></div></section>
-    <section id="view-stats" class="view"><div class="section-head"><div><p class="eyebrow">ANÁLISIS</p><h2>Estadísticas históricas</h2></div></div><div id="stats-root"></div></section>
-    <section id="view-base" class="view"><div class="section-head"><div><p class="eyebrow">DATOS</p><h2>Base de juego</h2></div></div><p class="notice">Los CSV del repositorio son la semilla canónica. IndexedDB conserva partidas, eventos y retiradas locales de preguntas comprometidas.</p><div id="base-root"></div></section>
-    <section id="view-diagnostics" class="view"><div class="section-head"><div><p class="eyebrow">INTEGRIDAD</p><h2>Diagnóstico</h2></div><button id="run-diagnostics" disabled>Comprobar ahora</button></div><div id="diagnostics-root"></div></section>
-    <section id="view-backup" class="view"><div class="section-head"><div><p class="eyebrow">SEGURIDAD</p><h2>Copias y restauración</h2></div></div><div class="card backup-card"><h3>Base local completa</h3><p>La web guarda cada jugada automáticamente. La semilla canónica usa CSV UTF-8; la copia JSON sirve para transportar/restaurar el estado local completo.</p><div class="actions"><button id="export-backup" class="primary" disabled>Exportar JSON</button><label class="file-button">Importar JSON<input id="import-backup" type="file" accept="application/json,.json" hidden disabled /></label><button id="reset-base" class="danger" disabled>Restaurar base original</button></div><p class="warning">El repositorio es público: preguntas y respuestas son deliberadamente inspeccionables.</p></div></section>
+    <section id="view-game" class="view active">
+      <div class="section-head"><div><p class="eyebrow">JUEGO</p><h1>Partida</h1></div><div class="actions"><button id="new-match-btn" class="primary" disabled>Nueva partida</button><select id="match-picker" aria-label="Cambiar de partida" disabled></select></div></div>
+      <div id="game-root" class="loading-card">Conectando con el servidor…</div>
+    </section>
+    <section id="view-stats" class="view">
+      <div class="section-head"><div><p class="eyebrow">ANÁLISIS</p><h2>Estadísticas</h2></div><button id="refresh-stats">Actualizar</button></div>
+      <div id="stats-root" class="loading-card">Abre la sección para calcular las estadísticas.</div>
+    </section>
+    <section id="view-base" class="view">
+      <div class="section-head"><div><p class="eyebrow">DATOS</p><h2>Banco de preguntas</h2></div></div>
+      <div id="base-root"></div>
+    </section>
+    <section id="view-diagnostics" class="view">
+      <div class="section-head"><div><p class="eyebrow">INTEGRIDAD</p><h2>Diagnóstico</h2></div><button id="run-diagnostics">Comprobar ahora</button></div>
+      <div id="diagnostics-root" class="loading-card">Abre la sección para comprobar el sistema.</div>
+    </section>
+    <section id="view-backup" class="view">
+      <div class="section-head"><div><p class="eyebrow">SEGURIDAD</p><h2>Copias y restauración</h2></div></div>
+      <div class="card stack">
+        <h3>Administración del servidor</h3>
+        <p>La clave se mantiene únicamente en memoria mientras esta página permanece abierta.</p>
+        <label>Clave administrativa<input id="admin-token" type="password" autocomplete="off" placeholder="TRIVIAL_ADMIN_TOKEN"></label>
+        <div class="actions wrap"><button id="export-backup" class="primary">Exportar copia JSON</button><label class="button-like">Importar copia JSON<input id="import-backup" type="file" accept="application/json,.json" hidden></label><button id="reload-seed">Recargar CSV ahora</button><button id="reset-base" class="danger">Restaurar base original</button></div>
+        <p class="warning">Restaurar elimina partidas web y retiradas globales. Los CSV actuales vuelven a ser el estado exacto del banco.</p>
+      </div>
+    </section>
+    <section id="view-help" class="view">
+      <div class="section-head"><div><p class="eyebrow">GUÍA</p><h2>Cómo funciona</h2></div></div>
+      <div class="card help-intro"><h3>Un dispositivo, una persona moderadora y hasta tres jugadores</h3><p>La aplicación elige y registra preguntas; no sustituye al tablero, al dado ni a las reglas de movimiento del Trivial físico.</p></div>
+      <div class="flow-map" aria-label="Flujo de una partida">
+        <div><b>1</b><strong>Nueva partida</strong><span>Jugadores, categorías y niveles</span></div><i>→</i><div><b>2</b><strong>Elegir turno</strong><span>Sin rotación automática</span></div><i>→</i><div><b>3</b><strong>Categoría</strong><span>Y posible intento de quesito</span></div><i>→</i><div><b>4</b><strong>Pregunta</strong><span>El nivel lo decide el servidor</span></div><i>→</i><div><b>5</b><strong>Resultado</strong><span>Respuesta, jugador y acierto o fallo</span></div>
+      </div>
+      <div class="grid two help-grid">
+        <article class="card"><h3>Pregunta comprometida</h3><p>Puede descartarse antes o después de revelar la respuesta. Se retira globalmente y se genera otra del mismo nivel si queda stock; si no, se aplica el sorteo determinista entre los niveles restantes.</p></article>
+        <article class="card"><h3>Quesitos</h3><p>Solo se gana un quesito cuando la pregunta estaba marcada como intento, la respuesta es correcta y el jugador no poseía ya esa categoría.</p></article>
+        <article class="card"><h3>Deshacer y rehacer</h3><p>El historial nunca se borra. Una pregunta mostrada sigue considerándose vista aunque se rectifique el resultado.</p></article>
+        <article class="card"><h3>Persistencia</h3><p>Partidas, eventos y retiradas viven en SQLite en el servidor. Dos pestañas ven el mismo estado y los CSV se sincronizan automáticamente.</p></article>
+      </div>
+    </section>
   </main>
-  <dialog id="new-match-dialog"><form id="new-match-form"><div class="dialog-head"><div><p class="eyebrow">CONFIGURACIÓN</p><h2>Nueva partida</h2></div><button type="button" class="icon-button" id="close-match-dialog" aria-label="Cerrar">×</button></div><label>Nombre de la partida <span class="muted">(opcional)</span><input name="name" placeholder="Partida" /></label><label>Banco<select id="new-match-bank" name="bank"></select></label><fieldset><legend>Jugadores · selecciona de 1 a 3</legend><div id="new-match-players" class="check-grid"></div></fieldset><fieldset><legend>Categorías incluidas</legend><div id="new-match-categories" class="check-grid"></div></fieldset><fieldset><legend>Niveles incluidos · pesos 70/20/10</legend><div id="new-match-levels" class="check-grid"></div></fieldset><p class="notice">Se congelan banco, jugadores, categorías, niveles, reglas, semilla PRNG, pesos fijos y fecha. En cada turno se elige la categoría; al comunicar el resultado se indica quién respondió.</p><div class="dialog-actions"><button type="button" id="cancel-match">Cancelar</button><button class="primary" type="submit">Crear partida</button></div></form></dialog>
+  <dialog id="new-match-dialog">
+    <form id="new-match-form">
+      <div class="dialog-head"><div><p class="eyebrow">CONFIGURACIÓN</p><h2>Nueva partida</h2></div><button type="button" class="icon-button" data-close="new-match-dialog" aria-label="Cerrar">×</button></div>
+      <label>Nombre <span class="muted">opcional</span><input name="name" maxlength="120" placeholder="Partida"></label>
+      <label>Banco<select id="new-match-bank" name="bank"></select></label>
+      <fieldset><legend>Jugadores · de 1 a 3</legend><div id="new-match-players" class="check-grid"></div></fieldset>
+      <fieldset><legend>Categorías</legend><div id="new-match-categories" class="check-grid"></div></fieldset>
+      <fieldset><legend>Niveles</legend><div id="new-match-levels" class="check-grid"></div></fieldset>
+      <p id="effective-weights" class="notice"></p>
+      <div class="dialog-actions"><button type="button" data-close="new-match-dialog">Cancelar</button><button class="primary" type="submit">Crear partida</button></div>
+    </form>
+  </dialog>
+  <dialog id="discard-dialog">
+    <form id="discard-form">
+      <div class="dialog-head"><div><p class="eyebrow">INCIDENCIA</p><h2>Descartar pregunta</h2></div><button type="button" class="icon-button" data-close="discard-dialog" aria-label="Cerrar">×</button></div>
+      <label>Motivo<select name="reason" required><option value="comprometida">Respuesta comprometida</option><option value="ambigua">Pregunta ambigua</option><option value="incorrecta">Respuesta incorrecta</option><option value="desactualizada">Pregunta desactualizada</option><option value="duplicada">Pregunta duplicada</option><option value="otro">Otro motivo</option></select></label>
+      <label>Nota <span class="muted">opcional, máximo 500 caracteres</span><textarea name="note" maxlength="500" rows="3"></textarea></label>
+      <p class="warning">La pregunta quedará retirada para todas las partidas del servidor.</p>
+      <div class="dialog-actions"><button type="button" data-close="discard-dialog">Cancelar</button><button class="danger" type="submit">Descartar y sustituir</button></div>
+    </form>
+  </dialog>
+  <div id="update-banner" class="update-banner" hidden><span>Hay una versión nueva disponible.</span><button id="apply-update">Actualizar</button></div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script type="module" src="src/app.js"></script>
 </body>
