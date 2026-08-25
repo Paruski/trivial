@@ -1,16 +1,17 @@
 import { test, expect } from '@playwright/test';
 
-test('partida completa, descarte global, undo/redo, persistencia y dos pestañas', async ({ page, context }) => {
+test('partida completa, jugador inicial, descarte global, undo/redo, persistencia y dos pestañas', async ({ page, context }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Partida', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Nueva partida' }).click();
   await page.locator('input[name="player"][value="J1"]').check();
   await page.locator('input[name="player"][value="J3"]').check();
+  await page.locator('input[name="startingPlayer"][value="J3"]').check();
   for (const input of await page.locator('input[name="category"]').all()) if (!['AL', 'IN'].includes(await input.getAttribute('value'))) await input.uncheck();
   await page.getByRole('button', { name: 'Crear partida' }).click();
-  await expect(page.getByRole('heading', { name: '¿Quién juega?', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Elige la categoría', exact: true })).toBeVisible();
+  await expect(page.locator('.turn-banner').first()).toContainText('J3');
 
-  await page.locator('[data-player-id="J3"]').first().click();
   await page.locator('[data-category-id="AL"]').click();
   await page.locator('#draw-question').click();
   await expect(page.getByText('PREGUNTA PENDIENTE')).toBeVisible();
