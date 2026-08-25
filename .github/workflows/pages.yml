@@ -1,0 +1,51 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - run: node --check src/app.js && node --check src/pages-engine.js && node --check src/pages-db.js
+      - run: node scripts/validate-data.mjs
+      - run: node --test tests/pages-engine.test.mjs tests/csv.test.mjs tests/question-bank-growth.test.mjs
+      - name: Build static site
+        run: |
+          rm -rf _site
+          mkdir -p _site/src _site/data _site/icons
+          cp index.html styles.css manifest.webmanifest sw.js _site/
+          cp icons/trivial.svg _site/icons/
+          cp src/app.js src/pages-db.js src/pages-engine.js src/seed.js src/csv.js src/config.js _site/src/
+          cp data/*.csv _site/data/
+          touch _site/.nojekyll
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
