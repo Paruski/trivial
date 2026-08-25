@@ -2,8 +2,6 @@
 declare(strict_types=1);
 require __DIR__ . '/lib/trivial.php';
 
-maybe_auto_update();
-
 function json_response(mixed $payload, int $status = 200): never {
     http_response_code($status);
     header('Content-Type: application/json; charset=utf-8');
@@ -32,11 +30,11 @@ if (str_starts_with($path, '/api/')) {
         $seed = load_seed();
         if ($method === 'GET' && $path === '/api/health') {
             $runtime = read_state();
-            json_response(['ok'=>true,'revision'=>$runtime['revision'],'seedVersion'=>$seed['meta']['seed_version']??null,'update'=>auto_update_status()]);
+            json_response(['ok'=>true,'revision'=>$runtime['revision'],'seedVersion'=>$seed['meta']['seed_version']??null]);
         }
         if ($method === 'GET' && $path === '/api/revision') {
             $runtime = read_state();
-            json_response(['revision'=>$runtime['revision'],'updatedAt'=>$runtime['updatedAt']??null,'update'=>auto_update_status()]);
+            json_response(['revision'=>$runtime['revision'],'updatedAt'=>$runtime['updatedAt']??null]);
         }
         if ($method === 'GET' && $path === '/api/bootstrap') {
             $runtime = read_state();
@@ -54,11 +52,6 @@ if (str_starts_with($path, '/api/')) {
             if(($payload['schemaVersion']??null)!==1||!is_array($payload['matches']??null)||!is_array($payload['events']??null)) throw new InvalidArgumentException('Copia incompatible.');
             $result=with_state_lock(function(array &$state) use($payload){$state=$payload;$state['revision']=((int)($state['revision']??0))+1;return ['ok'=>true,'revision'=>$state['revision']];});
             json_response($result);
-        }
-        if ($method === 'POST' && $path === '/api/update') {
-            @unlink(TRIVIAL_VAR.'/auto-update.json');
-            maybe_auto_update(0);
-            json_response(auto_update_status());
         }
         if ($method === 'POST' && $path === '/api/matches') {
             $payload=request_json();
