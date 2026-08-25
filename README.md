@@ -4,7 +4,7 @@ Versión para servidor propio de la aplicación. El **motor de juego está en PH
 
 ## Ejecutar
 
-Requisitos: PHP 8.2 o posterior. Git es opcional, pero necesario para la autoactualización.
+Requisitos: PHP 8.2 o posterior.
 
 ```bash
 git clone --branch server-auto https://github.com/Paruski/trivial.git
@@ -14,29 +14,16 @@ php -S 0.0.0.0:8080 router.php
 
 Abrir `http://IP-DEL-SERVIDOR:8080` desde cualquier equipo de la red. No hay Composer, npm, Python, base de datos externa, claves administrativas ni configuración obligatoria.
 
+Una vez clonado, **el servidor no se conecta a GitHub ni a ningún servicio externo**. No ejecuta `git fetch`, `git pull`, comprobaciones de versión ni llamadas HTTP salientes. Las futuras actualizaciones del código se hacen manualmente por el administrador del servidor.
+
 ## Persistencia
 
-- `data/*.csv`: banco e histórico versionados en Git.
+- `data/*.csv`: banco e histórico inicial incluidos con el código.
 - `var/state.json`: partidas y eventos creados en el servidor.
 - `var/state.json` se escribe de forma atómica y queda fuera de Git.
-- Todas las pestañas y equipos conectados ven el mismo estado; el navegador consulta la revisión cada 2 segundos.
+- Todas las pestañas y equipos conectados ven el mismo estado; el navegador consulta la revisión local del servidor cada 2 segundos.
 - Se puede exportar/restaurar `state.json` desde la propia web.
-
-## Autoactualización
-
-Por defecto PHP comprueba cada 5 minutos si la rama `server-auto` tiene una versión nueva y ejecuta:
-
-```text
-git pull --ff-only origin server-auto
-```
-
-El estado local no se toca porque `var/` está ignorado. Si hay modificaciones manuales en archivos versionados, `--ff-only` evita sobreescribirlas. Para desactivar la comprobación automática:
-
-```bash
-TRIVIAL_AUTO_UPDATE=0 php -S 0.0.0.0:8080 router.php
-```
-
-También hay un botón **Comprobar actualización** en la interfaz.
+- Las decisiones de juego nunca se envían a GitHub: se guardan únicamente en el servidor.
 
 ## Reglas implementadas
 
