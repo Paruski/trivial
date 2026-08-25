@@ -1,10 +1,10 @@
-name: Validate PHP server
+name: Validate standalone PHP server
 
 on:
   push:
-    branches: [server-auto]
+    branches: [server]
   pull_request:
-    branches: [server-auto]
+    branches: [server]
   workflow_dispatch:
 
 permissions:
@@ -21,8 +21,33 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-      - run: php -l router.php
+      - run: php -l public/api.php
       - run: php -l lib/trivial.php
-      - run: node --check src/server-app.js
+      - run: node --check public/src/server-app.js
       - run: php tests_php/smoke.php
       - run: php tests_php/offline.php
+      - name: HTTP integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -S 127.0.0.1:8080 -t public >/tmp/trivial-php.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          ready=0
+          for _ in {1..30}; do
+            if curl -fsS 'http://127.0.0.1:8080/api.php?path=%2Fapi%2Fhealth' >/tmp/health.json; then
+              ready=1
+              break
+            fi
+            sleep 0.2
+          done
+          if [ "$ready" -ne 1 ]; then
+            cat /tmp/trivial-php.log >&2
+            exit 1
+          fi
+          php -r '$j=json_decode(file_get_contents("/tmp/health.json"),true); if (!(($j["ok"]??false) === true)) exit(1);'
+          curl -fsS 'http://127.0.0.1:8080/' | grep -q "TRIVIAL_API_ENDPOINT = 'api.php'"
+          curl -fsS 'http://127.0.0.1:8080/api.php?path=%2Fapi%2Fbootstrap' >/tmp/bootstrap.json
+          php -r '$j=json_decode(file_get_contents("/tmp/bootstrap.json"),true); if (!is_array($j["banks"]??null) || !is_array($j["players"]??null) || !isset($j["base"]["questionCount"]) || $j["base"]["questionCount"] < 1) exit(1);'
+          test "$(curl -sS -o /dev/null -w '%{http_code}' 'http://127.0.0.1:8080/data/questions-AL.csv')" = "404"
+          test "$(curl -sS -o /dev/null -w '%{http_code}' 'http://127.0.0.1:8080/var/state.json')" = "404"
