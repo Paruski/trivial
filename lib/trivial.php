@@ -4,7 +4,6 @@ declare(strict_types=1);
 const TRIVIAL_ROOT = __DIR__ . '/..';
 const TRIVIAL_DATA = TRIVIAL_ROOT . '/data';
 const TRIVIAL_VAR = TRIVIAL_ROOT . '/var';
-const TRIVIAL_BRANCH = 'server-auto';
 
 function csv_bool(mixed $value, bool $fallback = false): bool {
     $value = strtolower(trim((string)$value));
@@ -456,30 +455,6 @@ function bootstrap_payload(array $seed, array $runtime): array {
     $used=global_used_keys($seed,$runtime);$stock=[];
     foreach($seed['categories'] as $category) if($category['active']) foreach($seed['levels'] as $level){$count=0;foreach($seed['questions'] as $q)if($q['bankId']===$category['bankId']&&$q['categoryId']===$category['categoryId']&&$q['levelKey']===$level['levelKey']&&$q['status']==='active'&&!isset($used[$q['questionKey']]))$count++;$stock[]=['bankId'=>$category['bankId'],'categoryId'=>$category['categoryId'],'levelKey'=>$level['levelKey'],'count'=>$count];}
     $matches=[];foreach(array_reverse($runtime['matches']) as $match){$state=derive_state($match,events_for($runtime,$match['matchId']));$matches[]=['matchId'=>$match['matchId'],'name'=>$match['name'],'playerIds'=>$match['playerIds'],'startingPlayerId'=>$match['startingPlayerId'],'status'=>$state['status'],'createdAt'=>$match['createdAt']];}
-    return ['seedVersion'=>$seed['meta']['seed_version']??null,'banks'=>$seed['banks'],'categories'=>$seed['categories'],'levels'=>$seed['levels'],'players'=>$seed['players'],'matches'=>$matches,'base'=>['questionCount'=>count($seed['questions']),'availableQuestionCount'=>count($seed['questions'])-count($used),'usedQuestionCount'=>count($used),'stock'=>$stock],'revision'=>$runtime['revision'],'update'=>auto_update_status()];
+    return ['seedVersion'=>$seed['meta']['seed_version']??null,'banks'=>$seed['banks'],'categories'=>$seed['categories'],'levels'=>$seed['levels'],'players'=>$seed['players'],'matches'=>$matches,'base'=>['questionCount'=>count($seed['questions']),'availableQuestionCount'=>count($seed['questions'])-count($used),'usedQuestionCount'=>count($used),'stock'=>$stock],'revision'=>$runtime['revision']];
 }
 
-function auto_update_status(): array {
-    ensure_var_dir();
-    $path=TRIVIAL_VAR.'/auto-update.json';
-    if(!is_file($path)) return ['enabled'=>true,'lastCheck'=>null,'ok'=>null,'message'=>'Aún no comprobado'];
-    $data=json_decode((string)file_get_contents($path),true);return is_array($data)?$data:['enabled'=>true,'lastCheck'=>null,'ok'=>false,'message'=>'Estado de actualización ilegible'];
-}
-
-function maybe_auto_update(int $intervalSeconds=300): void {
-    if (getenv('TRIVIAL_AUTO_UPDATE') === '0') return;
-    ensure_var_dir();
-    $status=auto_update_status();
-    $last=$status['lastCheck']??null;
-    if($last && time()-strtotime((string)$last)<$intervalSeconds) return;
-    $lock=fopen(TRIVIAL_VAR.'/update.lock','c+'); if(!$lock||!flock($lock,LOCK_EX|LOCK_NB)){if($lock)fclose($lock);return;}
-    try{
-        $status=auto_update_status();$last=$status['lastCheck']??null;if($last&&time()-strtotime((string)$last)<$intervalSeconds)return;
-        if(!is_dir(TRIVIAL_ROOT.'/.git')||!function_exists('exec')){$result=['enabled'=>true,'lastCheck'=>gmdate('c'),'ok'=>false,'message'=>'Sin checkout Git o exec; se omite la autoactualización.'];}
-        else{
-            $cmd='git -C '.escapeshellarg(realpath(TRIVIAL_ROOT)).' pull --ff-only origin '.escapeshellarg(TRIVIAL_BRANCH).' 2>&1';$output=[];$code=0;exec($cmd,$output,$code);
-            $result=['enabled'=>true,'lastCheck'=>gmdate('c'),'ok'=>$code===0,'message'=>implode("\n",array_slice($output,-6)) ?: ($code===0?'Actualizado':'git pull falló')];
-        }
-        file_put_contents(TRIVIAL_VAR.'/auto-update.json',json_encode($result,JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT)."\n",LOCK_EX);
-    }finally{flock($lock,LOCK_UN);fclose($lock);}
-}
