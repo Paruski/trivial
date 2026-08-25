@@ -1,3 +1,5 @@
+import './starter.js';
+
 const timeout = 15000;
 
 function requestId() {
