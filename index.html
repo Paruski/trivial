@@ -30,11 +30,10 @@
   <section id="view-backup" class="view">
     <div class="section-head"><div><p class="eyebrow">OPERACIÓN</p><h2>Servidor</h2></div></div>
     <div class="card stack">
-      <h3>Persistencia y autoactualización</h3>
-      <p>PHP guarda automáticamente todas las partidas y eventos en <code>var/state.json</code>. El archivo está fuera del control de versiones.</p>
-      <p id="update-status" class="notice">Comprobando actualización…</p>
-      <div class="actions wrap"><button id="force-update">Comprobar actualización</button><button id="export-backup" class="primary">Exportar JSON</button><label class="button-like">Restaurar JSON<input id="import-backup" type="file" accept="application/json,.json" hidden></label></div>
-      <p class="muted">Por defecto el servidor ejecuta periódicamente <code>git pull --ff-only origin server-auto</code>. Puede desactivarse con <code>TRIVIAL_AUTO_UPDATE=0</code>.</p>
+      <h3>Persistencia local del servidor</h3>
+      <p>PHP guarda automáticamente todas las partidas y eventos en <code>var/state.json</code>. El archivo permanece únicamente en este servidor y está fuera del control de versiones.</p>
+      <p class="notice">La aplicación no realiza conexiones con GitHub ni con servicios externos.</p>
+      <div class="actions wrap"><button id="export-backup" class="primary">Exportar JSON</button><label class="button-like">Restaurar JSON<input id="import-backup" type="file" accept="application/json,.json" hidden></label></div>
     </div>
   </section>
 </main>
