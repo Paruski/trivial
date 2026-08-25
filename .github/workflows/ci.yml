@@ -25,3 +25,4 @@ jobs:
       - run: php -l lib/trivial.php
       - run: node --check src/server-app.js
       - run: php tests_php/smoke.php
+      - run: php tests_php/offline.php
