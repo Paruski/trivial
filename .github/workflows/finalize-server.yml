@@ -1,0 +1,361 @@
+name: Finalize standalone PHP server
+
+on:
+  push:
+    branches: [server]
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.event.head_commit.message != 'Finalize standalone PHP server'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: server
+          fetch-depth: 0
+      - name: Build final server layout
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p public/src public/icons
+          git mv index.html public/index.html
+          git mv styles.css public/styles.css
+          git mv src/server-app.js public/src/server-app.js
+          git mv icons/trivial.svg public/icons/trivial.svg
+          rmdir src icons
+          git rm router.php
+
+          cat > public/api.php <<'PHP'
+          <?php
+          declare(strict_types=1);
+          require dirname(__DIR__) . '/lib/trivial.php';
+
+          function json_response(mixed $payload, int $status = 200): never {
+              http_response_code($status);
+              header('Content-Type: application/json; charset=utf-8');
+              header('Cache-Control: no-store');
+              header('X-Content-Type-Options: nosniff');
+              echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+              exit;
+          }
+
+          function json_error(Throwable $error, int $status = 400): never {
+              json_response(['error' => ['message' => $error->getMessage(), 'type' => get_class($error)]], $status);
+          }
+
+          function request_json(): array {
+              $raw = file_get_contents('php://input');
+              if ($raw === false || trim($raw) === '') return [];
+              $decoded = json_decode($raw, true);
+              if (!is_array($decoded)) throw new InvalidArgumentException('JSON inválido.');
+              return $decoded;
+          }
+
+          $path = (string)($_GET['path'] ?? '');
+          $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+
+          if (!str_starts_with($path, '/api/')) {
+              json_response(['error' => ['message' => 'Ruta API no encontrada.']], 404);
+          }
+          if (!in_array($method, ['GET', 'POST'], true)) {
+              json_response(['error' => ['message' => 'Método no permitido.']], 405);
+          }
+
+          try {
+              $seed = load_seed();
+
+              if ($method === 'GET' && $path === '/api/health') {
+                  $runtime = read_state();
+                  json_response(['ok' => true, 'revision' => $runtime['revision'], 'seedVersion' => $seed['meta']['seed_version'] ?? null]);
+              }
+              if ($method === 'GET' && $path === '/api/revision') {
+                  $runtime = read_state();
+                  json_response(['revision' => $runtime['revision'], 'updatedAt' => $runtime['updatedAt'] ?? null]);
+              }
+              if ($method === 'GET' && $path === '/api/bootstrap') {
+                  $runtime = read_state();
+                  json_response(bootstrap_payload($seed, $runtime));
+              }
+              if ($method === 'GET' && $path === '/api/statistics') {
+                  $runtime = read_state();
+                  json_response(compute_stats($seed, $runtime));
+              }
+              if ($method === 'GET' && $path === '/api/backup') {
+                  json_response(read_state());
+              }
+              if ($method === 'POST' && $path === '/api/restore') {
+                  $payload = request_json();
+                  if (($payload['schemaVersion'] ?? null) !== 1 || !is_array($payload['matches'] ?? null) || !is_array($payload['events'] ?? null)) {
+                      throw new InvalidArgumentException('Copia incompatible.');
+                  }
+                  $result = with_state_lock(function(array &$state) use ($payload) {
+                      $state = $payload;
+                      $state['revision'] = ((int)($state['revision'] ?? 0)) + 1;
+                      return ['ok' => true, 'revision' => $state['revision']];
+                  });
+                  json_response($result);
+              }
+              if ($method === 'POST' && $path === '/api/matches') {
+                  $payload = request_json();
+                  $result = with_state_lock(function(array &$state) use ($payload) {
+                      return create_match($state, $payload);
+                  });
+                  json_response($result, 201);
+              }
+              if ($method === 'POST' && preg_match('#^/api/matches/([^/]+)/actions$#', $path, $m)) {
+                  $matchId = rawurldecode($m[1]);
+                  $payload = request_json();
+                  $result = with_state_lock(function(array &$state) use ($matchId, $payload) {
+                      return perform_action($state, $matchId, $payload);
+                  });
+                  json_response($result);
+              }
+              if ($method === 'GET' && preg_match('#^/api/matches/([^/]+)$#', $path, $m)) {
+                  $runtime = read_state();
+                  $match = find_match($runtime, rawurldecode($m[1]));
+                  json_response(match_detail($seed, $runtime, $match));
+              }
+
+              json_response(['error' => ['message' => 'Ruta API no encontrada.']], 404);
+          } catch (InvalidArgumentException $error) {
+              json_error($error, 400);
+          } catch (Throwable $error) {
+              json_error($error, 500);
+          }
+          PHP
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          index = Path('public/index.html')
+          text = index.read_text(encoding='utf-8')
+          marker = '<script type="module" src="src/server-app.js"></script>'
+          replacement = '<script>window.TRIVIAL_API_ENDPOINT = \'api.php\';</script>\n' + marker
+          if marker not in text:
+              raise SystemExit('No se encontró el script principal en index.html')
+          text = text.replace(marker, replacement, 1)
+          old_notice = '<p class="notice">La aplicación no realiza conexiones con GitHub ni con servicios externos.</p>'
+          new_notice = '<p class="notice">El índice HTML configura <code>api.php</code> como único endpoint; el navegador llama al motor PHP por la misma conexión con este servidor.</p>\n      <p class="muted">La aplicación no realiza conexiones con GitHub ni con servicios externos durante su ejecución.</p>'
+          if old_notice in text:
+              text = text.replace(old_notice, new_notice, 1)
+          index.write_text(text, encoding='utf-8')
+
+          app = Path('public/src/server-app.js')
+          text = app.read_text(encoding='utf-8')
+          old = "async function request(path,options={}){const response=await fetch(path,{cache:'no-store',...options,headers:{'Content-Type':'application/json',...(options.headers||{})}});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error?.message||`HTTP ${response.status}`);return payload;}"
+          new = "const API_ENDPOINT=window.TRIVIAL_API_ENDPOINT||'api.php';\nfunction apiUrl(path){const url=new URL(API_ENDPOINT,window.location.href);url.searchParams.set('path',path);return url;}\nasync function request(path,options={}){const response=await fetch(apiUrl(path),{cache:'no-store',...options,headers:{'Accept':'application/json','Content-Type':'application/json',...(options.headers||{})}});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error?.message||`HTTP ${response.status}`);return payload;}"
+          if old not in text:
+              raise SystemExit('No se encontró la función request esperada')
+          app.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
+          cat > README.md <<'EOF'
+          # Trivial · servidor PHP
+
+          Versión definitiva para servidor propio. El navegador sirve `public/index.html`; ese índice declara `api.php` como endpoint y el JavaScript llama exclusivamente a ese PHP por misma-origen. El motor de juego está en `lib/trivial.php`, el banco e histórico inicial en `data/` y el estado vivo en `var/state.json`.
+
+          ## Clonar y servir
+
+          Requisito: PHP 8.2 o posterior.
+
+          ```bash
+          git clone --branch server --single-branch https://github.com/Paruski/trivial.git
+          cd trivial
+          php -S 0.0.0.0:8080 -t public
+          ```
+
+          Abre `http://IP-DEL-SERVIDOR:8080/` desde los equipos de la red.
+
+          Si quieres borrar incluso la referencia local al repositorio después de clonar:
+
+          ```bash
+          git remote remove origin
+          ```
+
+          No hay Composer, npm, Python, base de datos externa, claves administrativas ni configuración obligatoria para ejecutar la aplicación.
+
+          ## Despliegue con Apache o Nginx
+
+          Configura **`public/` como DocumentRoot / web root** y habilita PHP 8.2+. El proceso PHP debe tener permiso de lectura sobre `data/` y `lib/`, y permiso de escritura sobre `var/`.
+
+          No publiques la raíz completa del repositorio: `data/`, `lib/` y `var/` están deliberadamente fuera de `public/`, de modo que ni el banco con respuestas ni `state.json` puedan descargarse como archivos estáticos.
+
+          ## Arquitectura
+
+          ```text
+          navegador
+             │
+             ├── public/index.html
+             ├── public/styles.css
+             └── public/src/server-app.js
+                        │
+                        └── public/api.php?path=/api/...
+                                   │
+                                   └── lib/trivial.php
+                                        ├── data/*.csv   (semilla e histórico)
+                                        └── var/state.json (partidas nuevas)
+          ```
+
+          `index.html` fija explícitamente `window.TRIVIAL_API_ENDPOINT = 'api.php'`. Todas las operaciones de juego, estadísticas, backup y restauración pasan por ese PHP. No hay `git fetch`, `git pull`, comprobaciones remotas ni llamadas HTTP salientes en el runtime.
+
+          ## Persistencia
+
+          - `data/*.csv`: banco e histórico inicial incluidos con el código.
+          - `var/state.json`: partidas y eventos creados en el servidor.
+          - La escritura de `state.json` es atómica y está protegida con bloqueo de archivo.
+          - `var/` está fuera de Git salvo `var/.gitkeep`.
+          - Todas las pestañas y equipos conectados comparten el mismo estado; el navegador consulta la revisión del PHP cada 2 segundos.
+          - La web permite exportar y restaurar una copia JSON del estado.
+
+          ## Reglas implementadas
+
+          - 1, 2 o 3 jugadores entre J1/J2/J3.
+          - Selección explícita del jugador inicial.
+          - Cualquier subconjunto de categorías y niveles.
+          - Rotación automática de turno.
+          - Nivel elegido mediante PRNG determinista con pesos congelados al crear la partida.
+          - Dentro del nivel se usa la primera pregunta disponible por `random_order`.
+          - Una pregunta mostrada, administrada, retirada o expuesta no vuelve a servirse globalmente.
+          - Descartar intenta sustituir por otra pregunta del mismo nivel y, si no hay, vuelve al selector ponderado.
+          - Quesitos, cierre por victoria, cierre manual, estadísticas históricas + nuevas y deshacer/rehacer por eventos append-only.
+
+          ## Comprobaciones
+
+          ```bash
+          php -l public/api.php
+          php -l lib/trivial.php
+          node --check public/src/server-app.js
+          php tests_php/smoke.php
+          php tests_php/offline.php
+          ```
+
+          La CI además levanta `php -S ... -t public`, comprueba que `index.html` puede hablar con `api.php`, valida `/api/health` y `/api/bootstrap`, y verifica que `data/` y `var/` no sean accesibles por HTTP.
+
+          La rama `main` sigue siendo independiente y contiene la versión estática histórica para GitHub Pages. La rama definitiva de servidor es `server`.
+          EOF
+
+          cat > tests_php/offline.php <<'PHP'
+          <?php
+          declare(strict_types=1);
+
+          $root = dirname(__DIR__);
+          $runtimeFiles = [
+              'public/api.php',
+              'lib/trivial.php',
+              'public/src/server-app.js',
+              'public/index.html',
+          ];
+          $forbidden = [
+              'github.com',
+              'api.github.com',
+              'raw.githubusercontent.com',
+              'git pull',
+              'git fetch',
+              '/api/update',
+              'maybe_auto_update',
+              'auto_update_status',
+              'TRIVIAL_AUTO_UPDATE',
+              'TRIVIAL_BRANCH',
+          ];
+
+          foreach ($runtimeFiles as $file) {
+              $text = file_get_contents($root . '/' . $file);
+              if ($text === false) {
+                  fwrite(STDERR, "FAIL: no se pudo leer $file\n");
+                  exit(1);
+              }
+              foreach ($forbidden as $needle) {
+                  if (stripos($text, $needle) !== false) {
+                      fwrite(STDERR, "FAIL: conexión externa prohibida en $file: $needle\n");
+                      exit(1);
+                  }
+              }
+          }
+
+          $index = (string)file_get_contents($root . '/public/index.html');
+          if (strpos($index, "TRIVIAL_API_ENDPOINT = 'api.php'") === false) {
+              fwrite(STDERR, "FAIL: index.html no declara api.php como endpoint\n");
+              exit(1);
+          }
+
+          foreach (['data', 'lib', 'var'] as $privateDir) {
+              if (is_dir($root . '/public/' . $privateDir)) {
+                  fwrite(STDERR, "FAIL: $privateDir no debe estar bajo public/\n");
+                  exit(1);
+              }
+          }
+
+          echo "ok - runtime local, index->api.php y datos privados fuera de public/\n";
+          PHP
+
+          cat > .github/workflows/ci.yml <<'YAML'
+          name: Validate standalone PHP server
+
+          on:
+            push:
+              branches: [server]
+            pull_request:
+              branches: [server]
+            workflow_dispatch:
+
+          permissions:
+            contents: read
+
+          jobs:
+            test:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v6
+                - uses: shivammathur/setup-php@v2
+                  with:
+                    php-version: '8.2'
+                - uses: actions/setup-node@v6
+                  with:
+                    node-version: '22'
+                - run: php -l public/api.php
+                - run: php -l lib/trivial.php
+                - run: node --check public/src/server-app.js
+                - run: php tests_php/smoke.php
+                - run: php tests_php/offline.php
+                - name: HTTP integration
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    php -S 127.0.0.1:8080 -t public >/tmp/trivial-php.log 2>&1 &
+                    pid=$!
+                    trap 'kill "$pid" 2>/dev/null || true' EXIT
+                    ready=0
+                    for _ in {1..30}; do
+                      if curl -fsS 'http://127.0.0.1:8080/api.php?path=%2Fapi%2Fhealth' >/tmp/health.json; then
+                        ready=1
+                        break
+                      fi
+                      sleep 0.2
+                    done
+                    if [ "$ready" -ne 1 ]; then
+                      cat /tmp/trivial-php.log >&2
+                      exit 1
+                    fi
+                    php -r '$j=json_decode(file_get_contents("/tmp/health.json"),true); if (!(($j["ok"]??false) === true)) exit(1);'
+                    curl -fsS 'http://127.0.0.1:8080/' | grep -q "TRIVIAL_API_ENDPOINT = 'api.php'"
+                    curl -fsS 'http://127.0.0.1:8080/api.php?path=%2Fapi%2Fbootstrap' >/tmp/bootstrap.json
+                    php -r '$j=json_decode(file_get_contents("/tmp/bootstrap.json"),true); if (!is_array($j["banks"]??null) || !is_array($j["players"]??null) || !isset($j["base"]["questionCount"]) || $j["base"]["questionCount"] < 1) exit(1);'
+                    test "$(curl -sS -o /dev/null -w '%{http_code}' 'http://127.0.0.1:8080/data/questions-AL.csv')" = "404"
+                    test "$(curl -sS -o /dev/null -w '%{http_code}' 'http://127.0.0.1:8080/var/state.json')" = "404"
+          YAML
+
+          git rm .github/workflows/finalize-server.yml
+
+      - name: Commit final server version
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Paruski'
+          git config user.email 'paruskigoogle.flagstick503@passmail.com'
+          git add -A
+          git commit -m 'Finalize standalone PHP server'
+          git push origin HEAD:server
