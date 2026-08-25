@@ -1,9 +1,10 @@
-name: Validate, test and package
+name: Validate PHP server
 
 on:
   push:
-    branches: [main]
+    branches: [server-auto]
   pull_request:
+    branches: [server-auto]
   workflow_dispatch:
 
 permissions:
@@ -14,49 +15,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
       - uses: actions/setup-node@v6
         with:
-          node-version: "22"
-          cache: npm
-      - run: npm ci
-      - run: npm test
-
-  e2e:
-    needs: test
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    container:
-      image: mcr.microsoft.com/playwright:v1.62.1-noble
-      options: --user 1001
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-          cache: npm
-      - run: npm ci
-      - run: npm run test:e2e
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: playwright-report
-          path: playwright-report/
-          retention-days: 7
-
-  package:
-    needs: [test, e2e]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - run: python3 scripts/package-release.py dist/trivial-server.zip
-      - uses: actions/upload-artifact@v4
-        with:
-          name: trivial-server
-          path: dist/trivial-server.zip
-
-  container:
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - run: docker build -t trivial-server:test .
+          node-version: '22'
+      - run: php -l router.php
+      - run: php -l lib/trivial.php
+      - run: node --check src/server-app.js
+      - run: php tests_php/smoke.php
