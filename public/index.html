@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#111827">
+  <meta name="description" content="Trivial con motor PHP y persistencia compartida.">
+  <link rel="icon" href="icons/trivial.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <title>Trivial · servidor PHP</title>
+</head>
+<body>
+<header class="app-header">
+  <div class="brand"><span class="brand-mark">T</span><span><small>TRIVIAL</small><strong>Servidor PHP</strong></span></div>
+  <div id="status" class="connection online"><span></span>Conectando</div>
+  <nav class="tabs">
+    <button class="tab active" data-view="game">Partida</button>
+    <button class="tab" data-view="stats">Estadísticas</button>
+    <button class="tab" data-view="base">Banco</button>
+    <button class="tab" data-view="backup">Servidor</button>
+  </nav>
+</header>
+<main>
+  <section id="view-game" class="view active">
+    <div class="section-head"><div><p class="eyebrow">JUEGO COMPARTIDO</p><h1>Partida</h1></div><div class="actions"><button id="new-match" class="primary">Nueva partida</button><select id="match-picker" aria-label="Partida"></select></div></div>
+    <div id="game-root" class="loading-card">Conectando con PHP…</div>
+  </section>
+  <section id="view-stats" class="view"><div class="section-head"><div><p class="eyebrow">HISTÓRICO + SERVIDOR</p><h2>Estadísticas</h2></div></div><div id="stats-root"></div></section>
+  <section id="view-base" class="view"><div class="section-head"><div><p class="eyebrow">DATOS</p><h2>Banco de preguntas</h2></div></div><div id="base-root"></div></section>
+  <section id="view-backup" class="view">
+    <div class="section-head"><div><p class="eyebrow">OPERACIÓN</p><h2>Servidor</h2></div></div>
+    <div class="card stack">
+      <h3>Persistencia local del servidor</h3>
+      <p>PHP guarda automáticamente todas las partidas y eventos en <code>var/state.json</code>. El archivo permanece únicamente en este servidor y está fuera del control de versiones.</p>
+      <p class="notice">El índice HTML configura <code>api.php</code> como único endpoint; el navegador llama al motor PHP por la misma conexión con este servidor.</p>
+      <p class="muted">La aplicación no realiza conexiones con GitHub ni con servicios externos durante su ejecución.</p>
+      <div class="actions wrap"><button id="export-backup" class="primary">Exportar JSON</button><label class="button-like">Restaurar JSON<input id="import-backup" type="file" accept="application/json,.json" hidden></label></div>
+    </div>
+  </section>
+</main>
+<dialog id="new-dialog"><form id="new-form">
+  <div class="dialog-head"><div><p class="eyebrow">CONFIGURACIÓN</p><h2>Nueva partida</h2></div><button type="button" class="icon-button" data-close="new-dialog">×</button></div>
+  <label>Nombre <span class="muted">opcional</span><input name="name" maxlength="120" placeholder="Partida"></label>
+  <label>Banco<select id="new-bank" name="bank"></select></label>
+  <fieldset><legend>Jugadores · de 1 a 3</legend><div id="new-players" class="check-grid"></div></fieldset>
+  <fieldset><legend>Empieza</legend><div id="new-starting-player" class="check-grid"></div></fieldset>
+  <fieldset><legend>Categorías</legend><div id="new-categories" class="check-grid"></div></fieldset>
+  <fieldset><legend>Niveles</legend><div id="new-levels" class="check-grid"></div></fieldset>
+  <p id="weight-note" class="notice"></p>
+  <div class="dialog-actions"><button type="button" data-close="new-dialog">Cancelar</button><button class="primary" type="submit">Crear partida</button></div>
+</form></dialog>
+<dialog id="discard-dialog"><form id="discard-form">
+  <div class="dialog-head"><div><p class="eyebrow">INCIDENCIA</p><h2>Descartar pregunta</h2></div><button type="button" class="icon-button" data-close="discard-dialog">×</button></div>
+  <label>Motivo<select name="reason"><option value="comprometida">Respuesta comprometida</option><option value="ambigua">Pregunta ambigua</option><option value="incorrecta">Respuesta incorrecta</option><option value="desactualizada">Pregunta desactualizada</option><option value="duplicada">Pregunta duplicada</option><option value="otro">Otro</option></select></label>
+  <label>Nota <span class="muted">opcional</span><textarea name="note" maxlength="500" rows="3"></textarea></label>
+  <div class="dialog-actions"><button type="button" data-close="discard-dialog">Cancelar</button><button type="submit" class="danger">Descartar y sustituir</button></div>
+</form></dialog>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script>window.TRIVIAL_API_ENDPOINT = 'api.php';</script>
+<script type="module" src="src/server-app.js"></script>
+</body>
+</html>
