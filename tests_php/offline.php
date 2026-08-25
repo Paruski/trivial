@@ -3,10 +3,10 @@ declare(strict_types=1);
 
 $root = dirname(__DIR__);
 $runtimeFiles = [
-    'router.php',
+    'public/api.php',
     'lib/trivial.php',
-    'src/server-app.js',
-    'index.html',
+    'public/src/server-app.js',
+    'public/index.html',
 ];
 $forbidden = [
     'github.com',
@@ -35,4 +35,17 @@ foreach ($runtimeFiles as $file) {
     }
 }
 
-echo "ok - runtime sin conexiones GitHub\n";
+$index = (string)file_get_contents($root . '/public/index.html');
+if (strpos($index, "TRIVIAL_API_ENDPOINT = 'api.php'") === false) {
+    fwrite(STDERR, "FAIL: index.html no declara api.php como endpoint\n");
+    exit(1);
+}
+
+foreach (['data', 'lib', 'var'] as $privateDir) {
+    if (is_dir($root . '/public/' . $privateDir)) {
+        fwrite(STDERR, "FAIL: $privateDir no debe estar bajo public/\n");
+        exit(1);
+    }
+}
+
+echo "ok - runtime local, index->api.php y datos privados fuera de public/\n";
