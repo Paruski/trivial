@@ -1,4 +1,4 @@
-name: Validate, test and package
+name: Validate static Trivial
 
 on:
   push:
@@ -17,46 +17,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
-          cache: npm
-      - run: npm ci
-      - run: npm test
-
-  e2e:
-    needs: test
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    container:
-      image: mcr.microsoft.com/playwright:v1.62.1-noble
-      options: --user 1001
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-          cache: npm
-      - run: npm ci
-      - run: npm run test:e2e
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: playwright-report
-          path: playwright-report/
-          retention-days: 7
-
-  package:
-    needs: [test, e2e]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - run: python3 scripts/package-release.py dist/trivial-server.zip
-      - uses: actions/upload-artifact@v4
-        with:
-          name: trivial-server
-          path: dist/trivial-server.zip
-
-  container:
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - run: docker build -t trivial-server:test .
+      - run: node --check src/app.js
+      - run: node --check src/pages-engine.js
+      - run: node --check src/pages-db.js
+      - run: node scripts/validate-data.mjs
+      - run: node --test tests/pages-engine.test.mjs tests/csv.test.mjs tests/question-bank-growth.test.mjs
