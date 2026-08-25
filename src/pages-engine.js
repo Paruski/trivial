@@ -48,6 +48,7 @@ export function deterministicUnit(seed, ordinal, playerId, categoryId){
 
 export function globalUsedQuestionKeys(seed, runtime){
   const used=new Set(seed.questions.filter(q=>q.status!=='active').map(q=>q.questionKey));
+  for(const attempt of seed.attempts.filter(x=>x.active)) if(attempt.questionKey) used.add(attempt.questionKey);
   for(const exposure of seed.exposures.filter(x=>x.active)) if(exposure.questionKey) used.add(exposure.questionKey);
   for(const event of runtime.events){
     if(event.type===TYPES.QUESTION_DRAWN && event.payload?.questionKey) used.add(event.payload.questionKey);
@@ -73,15 +74,15 @@ export function selectQuestion(seed, runtime, match, categoryId, preferredLevel=
   const used=globalUsedQuestionKeys(seed,runtime);
   const base=seed.questions.filter(q=>q.bankId===match.bankId&&q.categoryId===categoryId&&q.status==='active'&&!used.has(q.questionKey));
   const byLevel=new Map(match.levelKeys.map(key=>[key,base.filter(q=>q.levelKey===key).sort((a,b)=>(a.randomOrder??999999)-(b.randomOrder??999999)||a.questionKey.localeCompare(b.questionKey))]));
+  const currentPlayerId=deriveState(match,events).currentPlayerId;
   if(preferredLevel && byLevel.get(preferredLevel)?.length){
-    return {question:byLevel.get(preferredLevel)[0], levelKey:preferredLevel, unit:deterministicUnit(match.seed,ordinal,match.startingPlayerId,categoryId), effectiveWeights:{[preferredLevel]:1}, ordinal, reason:'same_level_replacement'};
+    return {question:byLevel.get(preferredLevel)[0], levelKey:preferredLevel, unit:deterministicUnit(match.seed,ordinal,currentPlayerId,categoryId), effectiveWeights:{[preferredLevel]:1}, ordinal, reason:'same_level_replacement'};
   }
   const available=match.levelKeys.filter(key=>byLevel.get(key)?.length);
   if(!available.length) return null;
   let weighted=available.map(key=>[key,Math.max(0,Number(match.levelWeights?.[categoryId]?.[key]??0))]);
   if(weighted.reduce((s,[,w])=>s+w,0)<=0) weighted=available.map(key=>[key,1]);
-  const playerId=deriveState(match,events).currentPlayerId;
-  const unit=deterministicUnit(match.seed,ordinal,playerId,categoryId);
+  const unit=deterministicUnit(match.seed,ordinal,currentPlayerId,categoryId);
   const total=weighted.reduce((s,[,w])=>s+w,0);
   let cursor=unit*total;
   let chosen=weighted.at(-1)[0];
