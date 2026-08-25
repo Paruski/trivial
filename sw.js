@@ -1,5 +1,5 @@
-const CACHE='trivial-server-build-2026-08-20.1';
-const ASSETS=['/','/index.html','/styles.css','/manifest.webmanifest','/icons/trivial.svg','/src/app.js','/src/api.js'];
+const CACHE='trivial-server-build-2026-08-25.1';
+const ASSETS=['/','/index.html','/styles.css','/manifest.webmanifest','/icons/trivial.svg','/src/app.js','/src/api.js','/src/starter.js'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS))));
 self.addEventListener('activate',event=>event.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key))))])));
 self.addEventListener('message',event=>{if(event.data?.type==='SKIP_WAITING')self.skipWaiting()});
