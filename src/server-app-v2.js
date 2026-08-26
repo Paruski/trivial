@@ -1,0 +1,133 @@
+const $ = s => document.querySelector(s);
+const $$ = (s, root=document) => [...root.querySelectorAll(s)];
+const el={tabs:$$('.tab'),views:$$('.view'),status:$('#status'),game:$('#game-root'),picker:$('#match-picker'),newMatch:$('#new-match'),dialog:$('#new-dialog'),form:$('#new-form'),bank:$('#new-bank'),players:$('#new-players'),starting:$('#new-starting-player'),categories:$('#new-categories'),levels:$('#new-levels'),weight:$('#weight-note'),discardDialog:$('#discard-dialog'),discardForm:$('#discard-form'),stats:$('#stats-root'),base:$('#base-root'),backup:$('#export-backup'),restore:$('#import-backup'),toast:$('#toast')};
+let model=null,detail=null,currentMatchId=null,selectedCategoryId=null,selectedQuesito=false,lastRevision=-1,toastTimer;
+
+function node(tag,attrs={},children=[]){const e=document.createElement(tag);for(const[k,v]of Object.entries(attrs)){if(k==='class')e.className=v;else if(k==='text')e.textContent=v;else if(k==='checked')e.checked=!!v;else if(k==='disabled')e.disabled=!!v;else if(k==='style')e.style.cssText=v;else if(k.startsWith('on'))e.addEventListener(k.slice(2).toLowerCase(),v);else if(v!=null&&v!==false)e.setAttribute(k,String(v));}for(const child of(Array.isArray(children)?children:[children]))if(child!=null)e.append(child instanceof Node?child:document.createTextNode(String(child)));return e;}
+function toast(message){clearTimeout(toastTimer);el.toast.textContent=message;el.toast.classList.add('show');toastTimer=setTimeout(()=>el.toast.classList.remove('show'),3500);}
+async function request(path,options={}){const response=await fetch(path,{cache:'no-store',...options,headers:{'Content-Type':'application/json',...(options.headers||{})}});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error?.message||`HTTP ${response.status}`);return payload;}
+const get=path=>request(path);const post=(path,payload={})=>request(path,{method:'POST',body:JSON.stringify(payload)});
+const pct=x=>`${Math.round((Number(x)||0)*1000)/10}%`;
+const playerName=(id,match=detail?.match)=>match?.snapshot?.players?.find(x=>x.playerId===id)?.name??model?.players?.find(x=>x.playerId===id)?.name??id;
+const catInfo=(id,match=detail?.match)=>match?.snapshot?.categories?.find(x=>x.categoryId===id)??model?.categories?.find(x=>x.bankId===match?.bankId&&x.categoryId===id)??{categoryId:id,label:id,emoji:'',color:'#888'};
+const levelInfo=(key,match=detail?.match)=>match?.snapshot?.levels?.find(x=>x.levelKey===key)??model?.levels?.find(x=>x.levelKey===key)??{levelKey:key,label:key};
+const currentMarker=()=>detail?.marker?.find(x=>x.playerId===detail?.state?.currentPlayerId);
+
+async function refresh(){model=await get('/api/bootstrap');lastRevision=model.revision;if(!currentMatchId||!model.matches.some(m=>m.matchId===currentMatchId))currentMatchId=model.matches[0]?.matchId??null;detail=currentMatchId?await get(`/api/matches/${encodeURIComponent(currentMatchId)}`):null;renderAll();setStatus();}
+function setStatus(){el.status.className='connection online';el.status.lastChild.textContent='Servidor · listo';}
+
+function renderPicker(){el.picker.replaceChildren();if(!model.matches.length){el.picker.append(node('option',{text:'Sin partidas'}));el.picker.disabled=true;return;}el.picker.disabled=false;for(const m of model.matches){const names=m.playerIds.map(id=>model.players.find(p=>p.playerId===id)?.name??id).join('+');const opt=node('option',{value:m.matchId,text:`${m.name} · ${names} · ${m.status}`});opt.selected=m.matchId===currentMatchId;el.picker.append(opt);}}
+
+function renderGame(){
+  renderPicker();
+  el.game.replaceChildren();
+  if(!detail){el.game.className='';el.game.append(node('div',{class:'empty card',text:'Crea una partida para empezar.'}));return;}
+  const {state}=detail;
+  const stack=node('div',{class:'stack'});
+  const scoreboard=node('section',{class:'card marker'});
+  renderMarker(scoreboard);
+  const main=node('section',{class:'card game-main'});
+  main.append(node('p',{class:'eyebrow',text:state.status==='closed'?'PARTIDA CERRADA':state.currentDraw?(state.currentDraw.centerAttempt?'PREGUNTA FINAL · CENTRO':'PREGUNTA PENDIENTE'):(state.centerReadyPlayerId?'CENTRO':'TURNO')}),node('h2',{text:state.status==='closed'?'Partida finalizada':state.currentDraw?'Pregunta en juego':state.centerReadyPlayerId?`${playerName(state.currentPlayerId)} está en el centro`:`Juega ${playerName(state.currentPlayerId)}`}));
+  if(state.status==='closed')renderClosed(main);else if(state.currentDraw)renderQuestion(main);else renderTurn(main);
+  stack.append(scoreboard,main);
+  el.game.className='';
+  el.game.append(stack);
+}
+
+function renderClosed(root){const winners=detail.state.close?.winners??[];const reason=detail.state.close?.reason;const label=reason==='victoria_centro'?'Victoria en el centro':reason==='victoria'?'Victoria':'Cierre manual';root.append(node('p',{class:'notice',text:`${label}${winners.length?` · ${winners.map(id=>playerName(id)).join(' y ')}`:''}.`}));}
+
+function categoryButtons(root, centerAttempt=false){
+  const {match}=detail;
+  const grid=node('div',{class:'category-grid'});
+  for(const categoryId of match.categoryIds){
+    const c=catInfo(categoryId),stock=detail.stock.filter(x=>x.categoryId===categoryId).reduce((s,x)=>s+x.count,0);
+    grid.append(node('button',{type:'button',class:`category-button${selectedCategoryId===categoryId?' active':''}${stock?'':' stock-zero'}`,disabled:!stock,onclick:()=>{selectedCategoryId=categoryId;selectedQuesito=false;if(centerAttempt){action({action:'draw',categoryId,centerAttempt:true});}else{renderGame();}}},[node('span',{class:'category-dot',style:`--category-color:${c.color}`}),`${c.emoji} ${c.label} · ${stock}`]));
+  }
+  root.append(grid);
+}
+
+function renderTurn(root){
+  const {match,state}=detail;
+  const marker=currentMarker();
+  root.append(node('div',{class:'turn-banner'},[node('strong',{text:`Turno · ${playerName(state.currentPlayerId)}`}),node('span',{class:'muted',text:`Inicio: ${playerName(match.startingPlayerId)} · orden ${match.playerIds.map(id=>playerName(id)).join(' → ')}`})]));
+
+  if(state.centerReadyPlayerId===state.currentPlayerId){
+    root.append(node('p',{class:'notice',text:'El jugador ha llegado al centro. Los demás jugadores eligen ahora la categoría de la pregunta final.'}),node('p',{text:'Elige la categoría decidida por los demás jugadores:'}));
+    categoryButtons(root,true);
+    return;
+  }
+
+  if(marker?.hasAllQuesitos){
+    root.append(node('div',{class:'notice'},[node('strong',{text:`${marker.quesitoCount}/${marker.requiredQuesitos} quesitos obtenidos.`}),node('span',{text:' La victoria aún no está conseguida: la ficha debe llegar físicamente al centro.'})]),node('button',{class:'primary',text:'He llegado al centro',onclick:()=>action({action:'center_reached'})}));
+  }
+
+  root.append(node('p',{text:'1. Elige la categoría indicada por el tablero.'}));
+  categoryButtons(root,false);
+  const owned=detail.marker.find(x=>x.playerId===state.currentPlayerId)?.quesitos.includes(selectedCategoryId);
+  const toggle=node('label',{class:'quesito-toggle'});
+  toggle.append(node('input',{type:'checkbox',checked:selectedQuesito,disabled:!selectedCategoryId||owned,onchange:e=>selectedQuesito=e.target.checked}),owned?'2. Quesito ya obtenido en esta categoría':'2. Este turno es un intento de quesito');
+  root.append(toggle,node('button',{class:'primary',text:'Sacar pregunta',disabled:!selectedCategoryId,onclick:()=>action({action:'draw',categoryId:selectedCategoryId,quesitoAttempt:selectedQuesito,centerAttempt:false})}));
+}
+
+function renderQuestion(root){
+  const draw=detail.state.currentDraw,c=catInfo(draw.categoryId),l=levelInfo(draw.levelKey);
+  root.append(node('div',{class:'badges'},[
+    draw.centerAttempt?node('span',{class:'badge',text:'CENTRO · pregunta final'}):null,
+    node('span',{class:'badge'},[node('span',{class:'category-dot',style:`--category-color:${c.color}`}),`${c.emoji} ${c.label}`]),
+    node('span',{class:'badge',text:`Nivel: ${l.label}`}),
+    node('span',{class:'badge',text:`Turno: ${playerName(draw.playerId)}`}),
+    draw.quesitoAttempt?node('span',{class:'badge',text:'Intento de quesito'}):null
+  ]));
+  const card=node('div',{class:'question-card'},node('div',{class:'question-text',text:draw.prompt}));
+  if(detail.state.answerRevealed)card.append(node('div',{class:'answer-box'},[node('strong',{text:`Respuesta: ${draw.answer}`}),node('p',{text:draw.explanation})]));
+  root.append(card);
+  const controls=node('div',{class:'actions wrap'});
+  if(!detail.state.answerRevealed)controls.append(node('button',{class:'primary',text:'Mostrar respuesta',onclick:()=>action({action:'reveal'})}));
+  controls.append(node('button',{class:'danger',text:'Descartar pregunta',onclick:()=>el.discardDialog.showModal()}));
+  root.append(controls);
+  if(detail.state.answerRevealed){
+    const prompt=draw.centerAttempt?'Si acierta, gana la partida. Si falla, el turno pasa al siguiente jugador.':'Si acierta, conserva el turno. Si falla, el turno pasa al siguiente jugador.';
+    root.append(node('p',{class:'muted',text:prompt}),node('div',{class:'actions'},[node('button',{class:'good',text:'Acierto',onclick:()=>action({action:'result',correct:true})}),node('button',{class:'danger',text:'Fallo',onclick:()=>action({action:'result',correct:false})})]));
+  }
+}
+
+function renderMarker(root){
+  const {match,state}=detail;
+  root.append(node('p',{class:'eyebrow',text:'MARCADOR EN CURSO'}),node('div',{class:'turn-banner'},[node('strong',{text:state.status==='closed'?'Partida cerrada':`Turno actual · ${playerName(state.currentPlayerId)}`}),node('span',{text:state.centerReadyPlayerId?`${playerName(state.centerReadyPlayerId)} · en el centro`:match.name})]));
+
+  for(const p of detail.marker){
+    const isTurn=p.playerId===state.currentPlayerId&&state.status==='open';
+    const head=node('div',{class:'marker-head'},[node('strong',{text:`${playerName(p.playerId)}${isTurn?' ← TURNO':''}`}),node('span',{text:`Quesitos ${p.quesitoCount}/${p.requiredQuesitos} · ${p.correct}✓ ${p.wrong}✕`})]);
+    const chips=node('div',{class:'badges'});
+    for(const categoryId of match.categoryIds){
+      const c=catInfo(categoryId),owned=p.quesitos.includes(categoryId);
+      chips.append(node('span',{class:'badge',title:c.label},[node('span',{class:'category-dot',style:`--category-color:${owned?c.color:'#9ca3af'}`}),`${owned?'✓':'○'} ${c.emoji} ${c.label}`]));
+    }
+    const status=p.atCenter?'EN EL CENTRO · pendiente de pregunta final':p.hasAllQuesitos?'Todos los quesitos · falta llegar al centro':'';
+    root.append(node('div',{class:'marker-row'},[head,chips,status?node('p',{class:'muted',text:status}):null]));
+  }
+
+  root.append(node('div',{class:'actions wrap'},[node('button',{text:'Deshacer',disabled:!detail.canUndo||Boolean(state.currentDraw&&!state.currentDraw.replacementForEventId),onclick:()=>action({action:'undo'})}),node('button',{text:'Rehacer',disabled:!detail.canRedo,onclick:()=>action({action:'redo'})})]));
+  if(state.status==='open')root.append(node('button',{class:'danger',text:'Cerrar partida',disabled:Boolean(state.currentDraw),onclick:()=>action({action:'close'})}));
+  root.append(node('p',{class:'muted mono',text:`Reglas v2 · PHP · revisión ${detail.revision}\nsemilla ${match.seed.slice(0,12)}…`}));
+}
+
+async function action(payload){try{detail=await post(`/api/matches/${encodeURIComponent(currentMatchId)}/actions`,payload);selectedCategoryId=null;selectedQuesito=false;model=await get('/api/bootstrap');lastRevision=model.revision;renderAll();}catch(e){toast(e.message);}}
+
+function updateStarting(){const selected=$$('input[name="player"]:checked',el.form).map(x=>x.value),previous=$('input[name="startingPlayer"]:checked',el.form)?.value;el.starting.replaceChildren();for(const id of selected){const p=model.players.find(x=>x.playerId===id);el.starting.append(node('label',{},[node('input',{type:'radio',name:'startingPlayer',value:id,checked:selected.length===1||previous===id}),p?.name??id]));}}
+function buildDialog(bankId){el.players.replaceChildren();el.categories.replaceChildren();el.levels.replaceChildren();for(const p of model.players.filter(x=>x.active))el.players.append(node('label',{},[node('input',{type:'checkbox',name:'player',value:p.playerId,onchange:updateStarting}),p.name]));updateStarting();for(const c of model.categories.filter(x=>x.bankId===bankId&&x.active)){const stock=model.base.stock.filter(x=>x.bankId===bankId&&x.categoryId===c.categoryId).reduce((s,x)=>s+x.count,0);el.categories.append(node('label',{},[node('input',{type:'checkbox',name:'category',value:c.categoryId,checked:stock>0,disabled:!stock}),`${c.emoji} ${c.label}`]));}for(const l of model.levels){const stock=model.base.stock.some(x=>x.bankId===bankId&&x.levelKey===l.levelKey&&x.count>0);if(stock)el.levels.append(node('label',{},[node('input',{type:'checkbox',name:'level',value:l.levelKey,checked:true,onchange:updateWeightNote}),l.label]));}updateWeightNote();}
+function updateWeightNote(){const labels=$$('input[name="level"]:checked',el.form).map(x=>model.levels.find(l=>l.levelKey===x.value)?.label??x.value);el.weight.textContent=labels.length?`Niveles: ${labels.join(' · ')}. PHP congela por categoría las proporciones originales del banco; el agotamiento no reduce el peso de un nivel mientras quede stock.`:'Selecciona al menos un nivel.';}
+function openDialog(){el.bank.replaceChildren(...model.banks.map(b=>node('option',{value:b.bankId,text:b.name})));buildDialog(el.bank.value);el.dialog.showModal();}
+async function createMatch(event){event.preventDefault();const form=new FormData(el.form),payload={name:String(form.get('name')||''),bankId:el.bank.value,playerIds:$$('input[name="player"]:checked',el.form).map(x=>x.value),startingPlayerId:String(form.get('startingPlayer')||''),categoryIds:$$('input[name="category"]:checked',el.form).map(x=>x.value),levelKeys:$$('input[name="level"]:checked',el.form).map(x=>x.value)};try{detail=await post('/api/matches',payload);currentMatchId=detail.match.matchId;selectedCategoryId=null;selectedQuesito=false;el.dialog.close();el.form.reset();model=await get('/api/bootstrap');lastRevision=model.revision;renderAll();}catch(e){toast(e.message);}}
+
+function renderStats(){el.stats.replaceChildren();get('/api/statistics').then(result=>{const cards=node('div',{class:'metric-grid'});for(const row of result.byPlayer.sort((a,b)=>a.key.localeCompare(b.key)))cards.append(node('article',{class:'metric-card'},[node('strong',{text:model.players.find(p=>p.playerId===row.key)?.name??row.key}),node('div',{class:'kpi',text:pct(row.accuracy)}),node('p',{class:'muted',text:`${row.correct}/${row.attempts} · quesitos ${row.quesitosWon}/${row.quesitoAttempts}`})]));el.stats.replaceChildren(node('section',{class:'card stack'},[node('p',{class:'eyebrow',text:'GLOBAL'}),node('h3',{text:'Histórico + servidor'}),cards]));}).catch(e=>toast(e.message));}
+function renderBase(){const cards=node('div',{class:'stock-cards'});for(const c of model.categories.filter(x=>x.active))for(const l of model.levels){const count=model.base.stock.find(x=>x.bankId===c.bankId&&x.categoryId===c.categoryId&&x.levelKey===l.levelKey)?.count??0;cards.append(node('article',{class:`stock-card${count===0?' zero':count<=5?' low':''}`},[node('strong',{text:`${c.emoji} ${c.label} · ${l.label}`}),node('div',{class:'kpi',text:String(count)})]));}el.base.replaceChildren(node('div',{class:'grid three'},[node('article',{class:'card'},[node('div',{class:'kpi',text:String(model.base.questionCount)}),node('p',{text:'preguntas'})]),node('article',{class:'card'},[node('div',{class:'kpi',text:String(model.base.availableQuestionCount)}),node('p',{text:'disponibles'})]),node('article',{class:'card'},[node('div',{class:'kpi',text:String(model.base.usedQuestionCount)}),node('p',{text:'ya vistas/retiradas'})])]),node('section',{class:'stack'},[node('h3',{text:'Stock'}),cards]));}
+function renderAll(){renderGame();renderStats();renderBase();setStatus();}
+
+el.tabs.forEach(tab=>tab.onclick=()=>{el.tabs.forEach(x=>x.classList.toggle('active',x===tab));el.views.forEach(v=>v.classList.toggle('active',v.id===`view-${tab.dataset.view}`));if(tab.dataset.view==='stats')renderStats();});
+el.newMatch.onclick=openDialog;el.bank.onchange=()=>buildDialog(el.bank.value);el.form.onsubmit=createMatch;el.discardForm.onsubmit=async event=>{event.preventDefault();const form=new FormData(el.discardForm);el.discardDialog.close();await action({action:'discard',reason:String(form.get('reason')),note:String(form.get('note')||'')});el.discardForm.reset();};$$('[data-close]').forEach(b=>b.onclick=()=>document.getElementById(b.dataset.close).close());el.picker.onchange=async()=>{currentMatchId=el.picker.value;detail=await get(`/api/matches/${encodeURIComponent(currentMatchId)}`);selectedCategoryId=null;selectedQuesito=false;renderGame();};
+el.backup.onclick=async()=>{const data=await get('/api/backup'),blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`trivial-server-${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+el.restore.onchange=async()=>{try{const file=el.restore.files[0];if(!file)return;await post('/api/restore',JSON.parse(await file.text()));currentMatchId=null;await refresh();toast('Copia restaurada.');}catch(e){toast(e.message);}finally{el.restore.value='';}};
+setInterval(async()=>{try{const r=await get('/api/revision');if(r.revision!==lastRevision)await refresh();}catch{el.status.className='connection offline';el.status.lastChild.textContent='Servidor no disponible';}},2000);
+
+try{await refresh();}catch(e){console.error(e);el.status.className='connection offline';el.status.lastChild.textContent='Error';el.game.className='warning';el.game.textContent=e.message;}
