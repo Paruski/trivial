@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#111827">
-  <meta name="description" content="Trivial con motor PHP y persistencia compartida.">
+  <meta name="description" content="Trivial v2 con motor PHP, marcador visible y victoria en el centro.">
   <link rel="icon" href="icons/trivial.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
-  <title>Trivial · servidor PHP</title>
+  <title>Trivial · servidor PHP v2</title>
 </head>
 <body>
 <header class="app-header">
-  <div class="brand"><span class="brand-mark">T</span><span><small>TRIVIAL</small><strong>Servidor PHP</strong></span></div>
+  <div class="brand"><span class="brand-mark">T</span><span><small>TRIVIAL</small><strong>Servidor PHP · v2</strong></span></div>
   <div id="status" class="connection online"><span></span>Conectando</div>
   <nav class="tabs">
     <button class="tab active" data-view="game">Partida</button>
@@ -22,7 +22,7 @@
 </header>
 <main>
   <section id="view-game" class="view active">
-    <div class="section-head"><div><p class="eyebrow">JUEGO COMPARTIDO</p><h1>Partida</h1></div><div class="actions"><button id="new-match" class="primary">Nueva partida</button><select id="match-picker" aria-label="Partida"></select></div></div>
+    <div class="section-head"><div><p class="eyebrow">JUEGO COMPARTIDO · REGLAS V2</p><h1>Partida</h1></div><div class="actions"><button id="new-match" class="primary">Nueva partida</button><select id="match-picker" aria-label="Partida"></select></div></div>
     <div id="game-root" class="loading-card">Conectando con PHP…</div>
   </section>
   <section id="view-stats" class="view"><div class="section-head"><div><p class="eyebrow">HISTÓRICO + SERVIDOR</p><h2>Estadísticas</h2></div></div><div id="stats-root"></div></section>
@@ -32,7 +32,7 @@
     <div class="card stack">
       <h3>Persistencia local del servidor</h3>
       <p>PHP guarda automáticamente todas las partidas y eventos en <code>var/state.json</code>. El archivo permanece únicamente en este servidor y está fuera del control de versiones.</p>
-      <p class="notice">La aplicación no realiza conexiones con GitHub ni con servicios externos.</p>
+      <p class="notice">La aplicación no realiza conexiones con GitHub ni con servicios externos durante su ejecución.</p>
       <div class="actions wrap"><button id="export-backup" class="primary">Exportar JSON</button><label class="button-like">Restaurar JSON<input id="import-backup" type="file" accept="application/json,.json" hidden></label></div>
     </div>
   </section>
@@ -55,6 +55,6 @@
   <div class="dialog-actions"><button type="button" data-close="discard-dialog">Cancelar</button><button type="submit" class="danger">Descartar y sustituir</button></div>
 </form></dialog>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
-<script type="module" src="src/server-app.js"></script>
+<script type="module" src="src/server-app-v2.js"></script>
 </body>
 </html>
