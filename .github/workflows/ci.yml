@@ -2,9 +2,9 @@ name: Validate PHP server
 
 on:
   push:
-    branches: [server-auto]
+    branches: [server-auto, server-auto-v2]
   pull_request:
-    branches: [server-auto]
+    branches: [server-auto, server-auto-v2]
   workflow_dispatch:
 
 permissions:
@@ -23,6 +23,8 @@ jobs:
           node-version: '22'
       - run: php -l router.php
       - run: php -l lib/trivial.php
-      - run: node --check src/server-app.js
+      - run: php -l lib/v2.php
+      - run: node --check src/server-app-v2.js
       - run: php tests_php/smoke.php
+      - run: php tests_php/v2.php
       - run: php tests_php/offline.php
