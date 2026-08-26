@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-require __DIR__ . '/lib/trivial.php';
+require __DIR__ . '/lib/v2.php';
 
 function json_response(mixed $payload, int $status = 200): never {
     http_response_code($status);
@@ -30,7 +30,7 @@ if (str_starts_with($path, '/api/')) {
         $seed = load_seed();
         if ($method === 'GET' && $path === '/api/health') {
             $runtime = read_state();
-            json_response(['ok'=>true,'revision'=>$runtime['revision'],'seedVersion'=>$seed['meta']['seed_version']??null]);
+            json_response(['ok'=>true,'revision'=>$runtime['revision'],'seedVersion'=>$seed['meta']['seed_version']??null,'rulesVersion'=>'server-auto-v2']);
         }
         if ($method === 'GET' && $path === '/api/revision') {
             $runtime = read_state();
@@ -55,16 +55,16 @@ if (str_starts_with($path, '/api/')) {
         }
         if ($method === 'POST' && $path === '/api/matches') {
             $payload=request_json();
-            $result=with_state_lock(function(array &$state) use($payload){return create_match($state,$payload);});
+            $result=with_state_lock(function(array &$state) use($payload){return create_match_v2($state,$payload);});
             json_response($result,201);
         }
         if (preg_match('#^/api/matches/([^/]+)/actions$#',$path,$m) && $method==='POST') {
             $matchId=rawurldecode($m[1]);$payload=request_json();
-            $result=with_state_lock(function(array &$state) use($matchId,$payload){return perform_action($state,$matchId,$payload);});
+            $result=with_state_lock(function(array &$state) use($matchId,$payload){return perform_action_v2($state,$matchId,$payload);});
             json_response($result);
         }
         if (preg_match('#^/api/matches/([^/]+)$#',$path,$m) && $method==='GET') {
-            $runtime=read_state();$match=find_match($runtime,rawurldecode($m[1]));json_response(match_detail($seed,$runtime,$match));
+            $runtime=read_state();$match=find_match($runtime,rawurldecode($m[1]));json_response(match_detail_v2($seed,$runtime,$match));
         }
         json_response(['error'=>['message'=>'Ruta API no encontrada.']],404);
     } catch (InvalidArgumentException $error) { json_error($error,400); }
