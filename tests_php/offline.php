@@ -5,7 +5,8 @@ $root = dirname(__DIR__);
 $runtimeFiles = [
     'router.php',
     'lib/trivial.php',
-    'src/server-app.js',
+    'lib/v2.php',
+    'src/server-app-v2.js',
     'index.html',
 ];
 $forbidden = [
@@ -35,4 +36,4 @@ foreach ($runtimeFiles as $file) {
     }
 }
 
-echo "ok - runtime sin conexiones GitHub\n";
+echo "ok - runtime v2 sin conexiones GitHub\n";
