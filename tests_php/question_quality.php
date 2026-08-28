@@ -10,11 +10,14 @@ function qnorm(string $text): string {
     return trim(preg_replace('/\s+/', ' ', $text) ?? $text);
 }
 
-function answer_alternatives(string $answer): array {
-    $answer = preg_replace('/\([^)]*\)/u', '', $answer) ?? $answer;
-    $parts = preg_split('/\s+(?:o|u)\s+|[\/;]|\bor\b/ui', $answer) ?: [$answer];
+function answer_forms(string $answer): array {
+    $forms = [$answer];
+    $withoutParentheses = preg_replace('/\([^)]*\)/u', '', $answer) ?? $answer;
+    if ($withoutParentheses !== $answer) $forms[] = $withoutParentheses;
+    $parts = preg_split('/[\/;]|\s+or\s+/ui', $withoutParentheses) ?: [];
+    array_push($forms, ...$parts);
     $out = [];
-    foreach ($parts as $part) {
+    foreach ($forms as $part) {
         $part = trim($part, " \t\n\r\0\x0B.,:;!?¿¡«»\"'");
         $part = preg_replace('/^(?:el|la|los|las|un|una|unos|unas|al|del|en)\s+/ui', '', $part) ?? $part;
         $n = qnorm($part);
@@ -24,11 +27,20 @@ function answer_alternatives(string $answer): array {
 }
 
 $seed = load_seed();
+$blocked = [];
+foreach ($seed['attempts'] as $attempt) {
+    if (!empty($attempt['active']) && !empty($attempt['questionKey'])) $blocked[$attempt['questionKey']] = true;
+}
+foreach ($seed['exposures'] as $exposure) {
+    if (!empty($exposure['active']) && !empty($exposure['questionKey'])) $blocked[$exposure['questionKey']] = true;
+}
+
 $failures = [];
 foreach ($seed['questions'] as $q) {
     if (($q['status'] ?? '') !== 'active') continue;
+    if (isset($blocked[$q['questionKey']])) continue;
     $prompt = ' ' . qnorm((string)$q['prompt']) . ' ';
-    foreach (answer_alternatives((string)$q['answer']) as $answer) {
+    foreach (answer_forms((string)$q['answer']) as $answer) {
         if (str_contains($prompt, ' ' . $answer . ' ')) {
             $failures[] = $q['questionKey'] . "\t" . $q['categoryId'] . "\tANSWER=" . $q['answer'] . "\tPROMPT=" . $q['prompt'];
             break;
@@ -36,7 +48,7 @@ foreach ($seed['questions'] as $q) {
     }
 }
 if ($failures) {
-    fwrite(STDERR, "Active questions whose prompt contains an answer:\n" . implode("\n", $failures) . "\n");
+    fwrite(STDERR, "Playable questions whose prompt contains an answer:\n" . implode("\n", $failures) . "\n");
     exit(1);
 }
-echo "ok - no active question contains its answer literally\n";
+echo "ok - no playable question contains its answer literally\n";
