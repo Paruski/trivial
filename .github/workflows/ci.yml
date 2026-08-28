@@ -29,6 +29,7 @@ jobs:
       - run: node --check src/app.js
       - run: php tests_php/content.php
       - run: php tests_php/question_quality.php
+      - run: php tests_php/category_review.php
       - run: php tests_php/smoke.php
       - run: php tests_php/rules.php
       - run: php tests_php/ui.php
