@@ -37,7 +37,7 @@ Una vez clonado, **el servidor no se conecta a GitHub ni a ningún servicio exte
 - Cuando la ficha llega físicamente al centro se registra aparte con la acción **He llegado al centro**.
 - En el centro, los demás jugadores eligen la categoría de la pregunta final.
 - Acertar esa pregunta final cierra la partida con `reason=victoria_centro`.
-- Fallar en el centro pasa el turno al siguiente jugador y obliga a volver a llegar al centro en un turno posterior.
+- Fallar en el centro pasa el turno al siguiente jugador, pero **la ficha permanece en el centro**. Cuando vuelva su turno, el jugador puede intentar otra pregunta final sin registrar de nuevo la llegada.
 - El nivel se elige mediante PRNG determinista antes de escoger la pregunta.
 - Los pesos se congelan al crear la partida según la composición original de cada categoría, no según el stock restante.
 - Si un nivel se agota, se excluye y los pesos restantes se renormalizan sin alterar sus proporciones relativas.
