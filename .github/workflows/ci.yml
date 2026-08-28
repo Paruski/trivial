@@ -22,9 +22,12 @@ jobs:
         with:
           node-version: '22'
       - run: php -l router.php
-      - run: php -l lib/trivial.php
-      - run: php -l lib/v2.php
-      - run: node --check src/server-app-v2.js
+      - run: php -l lib/content.php
+      - run: php -l lib/storage.php
+      - run: php -l lib/game.php
+      - run: node --check src/app.js
+      - run: php tests_php/content.php
       - run: php tests_php/smoke.php
-      - run: php tests_php/v2.php
+      - run: php tests_php/rules.php
+      - run: php tests_php/security.php
       - run: php tests_php/offline.php

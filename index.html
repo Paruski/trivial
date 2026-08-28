@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#111827">
-  <meta name="description" content="Trivial v2 con motor PHP, marcador visible y victoria en el centro.">
+  <meta name="description" content="Trivial con motor PHP, estado local de servidor y contenido escalable en CSV externos.">
   <link rel="icon" href="icons/trivial.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
   <title>Trivial · servidor PHP v2</title>
@@ -26,12 +26,14 @@
     <div id="game-root" class="loading-card">Conectando con PHP…</div>
   </section>
   <section id="view-stats" class="view"><div class="section-head"><div><p class="eyebrow">HISTÓRICO + SERVIDOR</p><h2>Estadísticas</h2></div></div><div id="stats-root"></div></section>
-  <section id="view-base" class="view"><div class="section-head"><div><p class="eyebrow">DATOS</p><h2>Banco de preguntas</h2></div></div><div id="base-root"></div></section>
+  <section id="view-base" class="view"><div class="section-head"><div><p class="eyebrow">CONTENIDO CSV</p><h2>Temas y preguntas</h2></div></div><div id="base-root"></div></section>
   <section id="view-backup" class="view">
     <div class="section-head"><div><p class="eyebrow">OPERACIÓN</p><h2>Servidor</h2></div></div>
     <div class="card stack">
-      <h3>Persistencia local del servidor</h3>
-      <p>PHP guarda automáticamente todas las partidas y eventos en <code>var/state.json</code>. El archivo permanece únicamente en este servidor y está fuera del control de versiones.</p>
+      <h3>Motor y contenido desacoplados</h3>
+      <p>La web y el motor PHP no contienen los temas ni las preguntas. PHP los carga desde el directorio CSV configurado mediante <code>TRIVIAL_DATA_DIR</code>; por defecto usa <code>data/</code>.</p>
+      <p>El contenido puede vivir fuera del directorio público, por ejemplo en <code>/srv/trivial-data</code>, y puede ampliarse añadiendo filas a <code>categories.csv</code> y nuevos ficheros <code>questions-*.csv</code> o <code>questions/*.csv</code>.</p>
+      <p>Las partidas y eventos se guardan aparte en <code>var/state.json</code> o en el directorio indicado por <code>TRIVIAL_VAR_DIR</code>.</p>
       <p class="notice">La aplicación no realiza conexiones con GitHub ni con servicios externos durante su ejecución.</p>
       <div class="actions wrap"><button id="export-backup" class="primary">Exportar JSON</button><label class="button-like">Restaurar JSON<input id="import-backup" type="file" accept="application/json,.json" hidden></label></div>
     </div>
@@ -43,7 +45,7 @@
   <label>Banco<select id="new-bank" name="bank"></select></label>
   <fieldset><legend>Jugadores · de 1 a 3</legend><div id="new-players" class="check-grid"></div></fieldset>
   <fieldset><legend>Empieza</legend><div id="new-starting-player" class="check-grid"></div></fieldset>
-  <fieldset><legend>Categorías</legend><div id="new-categories" class="check-grid"></div></fieldset>
+  <fieldset><legend>Temas / categorías</legend><div id="new-categories" class="check-grid"></div></fieldset>
   <fieldset><legend>Niveles</legend><div id="new-levels" class="check-grid"></div></fieldset>
   <p id="weight-note" class="notice"></p>
   <div class="dialog-actions"><button type="button" data-close="new-dialog">Cancelar</button><button class="primary" type="submit">Crear partida</button></div>
@@ -55,6 +57,6 @@
   <div class="dialog-actions"><button type="button" data-close="discard-dialog">Cancelar</button><button type="submit" class="danger">Descartar y sustituir</button></div>
 </form></dialog>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
-<script type="module" src="src/server-app-v2.js"></script>
+<script type="module" src="src/app.js"></script>
 </body>
 </html>
