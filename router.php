@@ -25,6 +25,7 @@ function request_json(): array {
 function serve_public_file(string $path): never {
     $public = [
         '/styles.css'=>['styles.css','text/css; charset=utf-8'],
+        '/src/bootstrap.js'=>['src/bootstrap.js','text/javascript; charset=utf-8'],
         '/src/app.js'=>['src/app.js','text/javascript; charset=utf-8'],
         '/icons/trivial.svg'=>['icons/trivial.svg','image/svg+xml'],
     ];
@@ -43,7 +44,18 @@ function serve_public_file(string $path): never {
     exit;
 }
 
-$path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+$queryPath = $_GET['path'] ?? null;
+if ($queryPath !== null) {
+    if (!is_string($queryPath) || !str_starts_with($queryPath, '/api/')) {
+        http_response_code(400);
+        header('Content-Type: text/plain; charset=utf-8');
+        echo 'Ruta API inválida';
+        exit;
+    }
+    $path = parse_url($queryPath, PHP_URL_PATH) ?: '/';
+} else {
+    $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+}
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if (str_starts_with($path, '/api/')) {
