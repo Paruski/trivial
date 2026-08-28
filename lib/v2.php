@@ -18,6 +18,7 @@ function derive_state_v2(array $match, array $events): array {
         'answerRevealed'=>false,
         'close'=>null,
         'quesitosByPlayer'=>[],
+        'centerReachedByPlayer'=>[],
         'centerReadyPlayerId'=>null,
     ];
 
@@ -37,8 +38,11 @@ function derive_state_v2(array $match, array $events): array {
                 break;
 
             case 'CENTER_REACHED':
-                $state['currentPlayerId'] = $p['playerId'];
-                $state['centerReadyPlayerId'] = $p['playerId'];
+                $playerId = (string)($p['playerId'] ?? '');
+                if ($playerId !== '') {
+                    $state['centerReachedByPlayer'][$playerId] = true;
+                    $state['currentPlayerId'] = $playerId;
+                }
                 break;
 
             case 'RESULT_RECORDED':
@@ -47,22 +51,10 @@ function derive_state_v2(array $match, array $events): array {
                 }
                 if (($state['currentDraw']['eventId'] ?? null) === ($p['drawEventId'] ?? null)) {
                     $turn = $state['currentDraw']['playerId'];
-                    $centerAttempt = !empty($state['currentDraw']['centerAttempt']) || !empty($p['centerAttempt']);
                     $correct = !empty($p['correct']);
                     $state['currentDraw'] = null;
                     $state['answerRevealed'] = false;
-
-                    if ($centerAttempt) {
-                        if ($correct) {
-                            $state['currentPlayerId'] = $turn;
-                            $state['centerReadyPlayerId'] = $turn;
-                        } else {
-                            $state['currentPlayerId'] = next_player($match, $turn);
-                            $state['centerReadyPlayerId'] = null;
-                        }
-                    } else {
-                        $state['currentPlayerId'] = $correct ? $turn : next_player($match, $turn);
-                    }
+                    $state['currentPlayerId'] = $correct ? $turn : next_player($match, $turn);
                 }
                 break;
 
@@ -80,6 +72,12 @@ function derive_state_v2(array $match, array $events): array {
                 break;
         }
     }
+
+    $currentPlayerId = (string)($state['currentPlayerId'] ?? '');
+    $state['centerReadyPlayerId'] = $currentPlayerId !== '' && !empty($state['centerReachedByPlayer'][$currentPlayerId])
+        ? $currentPlayerId
+        : null;
+
     return $state;
 }
 
@@ -208,7 +206,7 @@ function match_detail_v2(array $seed, array $runtime, array $match): array {
             'quesitoCount'=>count($owned),
             'requiredQuesitos'=>count($match['categoryIds']),
             'hasAllQuesitos'=>$hasAll,
-            'atCenter'=>$derived['centerReadyPlayerId'] === $playerId,
+            'atCenter'=>!empty($derived['centerReachedByPlayer'][$playerId]),
         ];
     }
     $derived['centerEligiblePlayerIds'] = $eligible;
@@ -224,6 +222,27 @@ function match_detail_v2(array $seed, array $runtime, array $match): array {
         'canRedo'=>can_redo($events),
         'revision'=>$runtime['revision'],
     ];
+}
+
+function bootstrap_payload_v2(array $seed, array $runtime): array {
+    $payload = bootstrap_payload($seed, $runtime);
+    $matches = [];
+    foreach (array_reverse($runtime['matches']) as $match) {
+        $state = derive_state_v2($match, events_for($runtime, $match['matchId']));
+        $matches[] = [
+            'matchId'=>$match['matchId'],
+            'name'=>$match['name'],
+            'playerIds'=>$match['playerIds'],
+            'startingPlayerId'=>$match['startingPlayerId'],
+            'currentPlayerId'=>$state['currentPlayerId'],
+            'centerReadyPlayerId'=>$state['centerReadyPlayerId'],
+            'status'=>$state['status'],
+            'createdAt'=>$match['createdAt'],
+        ];
+    }
+    $payload['matches'] = $matches;
+    $payload['rulesVersion'] = 'server-auto-v2';
+    return $payload;
 }
 
 function create_match_v2(array &$runtime, array $payload): array {
@@ -246,10 +265,12 @@ function perform_action_v2(array &$runtime, string $matchId, array $payload): ar
     if ($action === 'draw') {
         if ($derived['currentDraw']) throw new InvalidArgumentException('Ya hay una pregunta pendiente.');
         $centerAttempt = !empty($payload['centerAttempt']);
-        if ($derived['centerReadyPlayerId'] !== null) {
-            if ($derived['centerReadyPlayerId'] !== $derived['currentPlayerId']) throw new RuntimeException('Estado de centro incoherente.');
-            if (!$centerAttempt) throw new InvalidArgumentException('El jugador está en el centro: los demás jugadores deben elegir la categoría de la pregunta final.');
-        } elseif ($centerAttempt) {
+        $currentPlayerId = (string)$derived['currentPlayerId'];
+        $atCenter = !empty($derived['centerReachedByPlayer'][$currentPlayerId]);
+        if ($atCenter && !$centerAttempt) {
+            throw new InvalidArgumentException('El jugador está en el centro: los demás jugadores deben elegir la categoría de la pregunta final.');
+        }
+        if (!$atCenter && $centerAttempt) {
             throw new InvalidArgumentException('Marca primero que el jugador ha llegado al centro.');
         }
 
@@ -276,8 +297,10 @@ function perform_action_v2(array &$runtime, string $matchId, array $payload): ar
 
     } elseif ($action === 'center_reached') {
         if ($derived['currentDraw']) throw new InvalidArgumentException('Resuelve o descarta la pregunta pendiente antes de entrar al centro.');
-        if ($derived['centerReadyPlayerId'] !== null) throw new InvalidArgumentException('El jugador ya está marcado en el centro.');
         $playerId = (string)$derived['currentPlayerId'];
+        if (!empty($derived['centerReachedByPlayer'][$playerId])) {
+            throw new InvalidArgumentException('El jugador ya está marcado en el centro.');
+        }
         $owned = $derived['quesitosByPlayer'][$playerId] ?? [];
         if (!player_has_all_quesitos_v2($match, $owned)) {
             throw new InvalidArgumentException('El jugador todavía no tiene todos los quesitos de esta partida.');
