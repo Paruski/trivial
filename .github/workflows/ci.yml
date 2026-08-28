@@ -25,9 +25,23 @@ jobs:
       - run: php -l lib/content.php
       - run: php -l lib/storage.php
       - run: php -l lib/game.php
+      - run: node --check src/bootstrap.js
       - run: node --check src/app.js
       - run: php tests_php/content.php
       - run: php tests_php/smoke.php
       - run: php tests_php/rules.php
       - run: php tests_php/security.php
       - run: php tests_php/offline.php
+      - name: Test normal PHP hosting without rewrite rules
+        run: |
+          php -S 127.0.0.1:8765 -t . >/tmp/trivial-http.log 2>&1 &
+          pid=$!
+          trap 'kill $pid' EXIT
+          sleep 1
+          curl -fsS http://127.0.0.1:8765/ >/tmp/index.html
+          grep -q 'src/bootstrap.js' /tmp/index.html
+          curl -fsS http://127.0.0.1:8765/src/bootstrap.js >/tmp/bootstrap.js
+          curl -fsS 'http://127.0.0.1:8765/router.php?path=/api/health' >/tmp/health.json
+          php -r '$x=json_decode(file_get_contents("/tmp/health.json"),true); if(!is_array($x)||empty($x["ok"])) exit(1);'
+          curl -fsS 'http://127.0.0.1:8765/router.php?path=/api/bootstrap' >/tmp/bootstrap.json
+          php -r '$x=json_decode(file_get_contents("/tmp/bootstrap.json"),true); if(!is_array($x)||!isset($x["banks"],$x["categories"],$x["players"])) exit(1);'
