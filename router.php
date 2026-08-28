@@ -25,6 +25,7 @@ function request_json(): array {
 function serve_public_file(string $path): never {
     $public = [
         '/styles.css'=>['styles.css','text/css; charset=utf-8'],
+        '/styles-layout.css'=>['styles-layout.css','text/css; charset=utf-8'],
         '/src/bootstrap.js'=>['src/bootstrap.js','text/javascript; charset=utf-8'],
         '/src/app.js'=>['src/app.js','text/javascript; charset=utf-8'],
         '/icons/trivial.svg'=>['icons/trivial.svg','image/svg+xml'],
@@ -39,7 +40,7 @@ function serve_public_file(string $path): never {
     $file = __DIR__ . '/' . $relative;
     if (!is_file($file)) { http_response_code(404); exit; }
     header('Content-Type: ' . $type);
-    header('Cache-Control: public, max-age=300');
+    header('Cache-Control: no-cache, must-revalidate');
     readfile($file);
     exit;
 }
