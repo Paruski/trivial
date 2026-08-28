@@ -38,7 +38,7 @@ if (str_starts_with($path, '/api/')) {
         }
         if ($method === 'GET' && $path === '/api/bootstrap') {
             $runtime = read_state();
-            json_response(bootstrap_payload($seed,$runtime));
+            json_response(bootstrap_payload_v2($seed,$runtime));
         }
         if ($method === 'GET' && $path === '/api/statistics') {
             $runtime = read_state();
